@@ -77,15 +77,14 @@ the old template and in `cckpGraphRag/lambda_function.py`:**
    not a real link) versus **`cckp:datasetRef`** (present on only 394 of
    4,773 — far closer to the SQL variant's own real linked-dataset rate,
    and plausibly a proper object-property reference rather than a
-   free-text field). **Confirm which one actually resolves to a real
-   `cckp:Dataset` node** (spot-check a `datasetRef` value against a real
-   `Dataset` instance) before writing the SPARQL variant's linked-resources
-   example query — `datasetRef` is the more likely candidate for a
-   semantically real join, and defaulting the Instruction's example to the
-   wrong one of these two would silently reproduce the exact
-   "field looks like a link but usually isn't" trap the SQL variant's own
-   Instruction already had to spell out explicitly for `dataset`/
-   `datasetAlias` (`cloudformation.sql.yaml:328`).
+   free-text field). **Resolved with certainty via finding #9 below** (went
+   to `kg-pipeline`'s actual source rather than guessing from the counts
+   alone): `cckp:datasetRef` is the real, SHACL-guaranteed link
+   (`sh:class cckp:Dataset`); `cckp:dataset` is the raw literal mirror of
+   the SQL column, same "looks like a link but usually isn't" shape the SQL
+   variant's own Instruction already had to spell out for `dataset`/
+   `datasetAlias` (`cloudformation.sql.yaml:328`). **Use `datasetRef`, never
+   `dataset`, in the SPARQL variant's linked-resources example query.**
 
    **Consequence:** every query this backend runs must type-anchor to a
    `cckp:` class (`?x a cckp:Dataset`, etc.) — the existing speculative
@@ -353,6 +352,72 @@ the plan as written, the other simplifies a design decision already made:**
      should be verified against AWS's current Bedrock Agents documentation
      rather than assumed, before picking a final number.
 
+9. **Went to the actual source of the KG (`mc2-center/data-models`'s
+   `kg-pipeline`, PR #264 — currently `OPEN`, not merged, branch
+   `aws-upload-pipeline`; this is live source-of-truth research, but note
+   it's an in-flight branch, not a stable committed reference — re-check
+   after the PR merges or moves) instead of only inferring structure from
+   live property-count queries.** This both closes an open question from
+   finding #2's addendum with certainty and surfaces a real functional gap
+   in `get_shape()` as currently written.
+   - **`cckp:datasetRef` (and the equivalent `Ref` property for every other
+     join) is now definitively confirmed, not just probable.**
+     `kg-pipeline/scripts/build_triples.py` emits a `cckp:{field}Ref`
+     object-property triple "per resolved join" specifically for fields
+     with a `cckp_join` annotation in `kg-pipeline/schema/cckp_portal.linkml.yaml`,
+     separate from the plain `cckp:{field}` literal mirror of the raw
+     SQL-column value. `kg-pipeline/schema/cckp_portal.shacl.ttl` formally
+     asserts the target type of every one of these `Ref` properties (e.g.
+     `shape:DatasetRefShape`: `sh:targetSubjectsOf cckp:datasetRef ;
+     sh:property [ sh:class cckp:Dataset ; ... ]`) — this is a hand-authored,
+     validated (`make validate` runs `pyshacl`-style checks against it)
+     contract, not an inference from sampled data. **Use `{field}Ref`
+     properties for every cross-class join in the Instruction's
+     linked-resources examples, never the plain `{field}` literal.**
+   - **The full join map, confirmed from `cckp_portal.linkml.yaml`'s
+     `cckp_join` annotations (far more complete than what this plan had
+     before — it only knew about Publication↔Dataset):**
+     | Source `Class.field` | → Target | Emits |
+     |---|---|---|
+     | `Dataset.pubMedId` | `Publication.pubMedId` | `cckp:pubMedIdRef` → `cckp:Publication` |
+     | `Dataset.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` |
+     | `Publication.dataset` | `Dataset.datasetAlias` | `cckp:datasetRef` → `cckp:Dataset` |
+     | `Publication.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` |
+     | `Tool.pubMedId` | `Publication.pubMedId` | `cckp:pubMedIdRef` → `cckp:Publication` |
+     | `Tool.datasets` | `Dataset.datasetAlias` | `cckp:datasetRef` → `cckp:Dataset` |
+     | `Tool.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` |
+     | `EducationalResource.publicationId` | `Publication.pubMedId` | `cckp:publicationIdRef` → `cckp:Publication` |
+     | `EducationalResource.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` |
+
+     Every class joins to `Grant` via `grantNumber`/`grantNumberRef` — the
+     Instruction's linked-resources section should cover all four of these,
+     not just the Publication↔Dataset pair this plan previously knew about.
+   - **`get_shape()` will most likely return empty for `Publication`,
+     `Tool`, and `EducationalResource` as currently designed — this is no
+     longer a "spot-check, probably fine" item, it's a concrete predicted
+     gap with a source-level reason.** `get_shape()` queries
+     `?shape a sh:NodeShape ; sh:targetClass cckp:{class}`, but
+     `cckp_portal.shacl.ttl` only has **two** `sh:targetClass`-based shapes
+     total — `shape:DatasetShape` (`sh:targetClass cckp:Dataset`) and
+     `shape:GrantShape` (`sh:targetClass cckp:Grant`). Every other shape in
+     that file targets via `sh:targetSubjectsOf cckp:{property}` (a
+     property-keyed target, not a class-keyed one) — there is no
+     `sh:targetClass cckp:Publication`/`cckp:Tool`/`cckp:EducationalResource`
+     shape anywhere in CCKP's own hand-authored shapes file, and
+     `kg-pipeline/Makefile` only ever validates against this one file (no
+     second, auto-generated SHACL file exists to fill the gap). **This
+     needs a real design decision, not just a spot-check**: either (a)
+     confirm live whether some other mechanism still produces a
+     `sh:targetClass`-based shape for these three classes elsewhere in the
+     merged graph (test directly — don't assume from the repo alone, since
+     the live graph could differ from what's in this branch), or (b) if
+     confirmed empty, have `get_shape()` fall back to also querying
+     `sh:targetSubjectsOf` shapes for that class's own known join
+     properties, or (c) accept and clearly document that `getShape` only
+     gives real constraint info for `Dataset`/`Grant` today, and say so in
+     the Instruction rather than let the agent treat a silently-empty
+     result as "this class has no documented shape constraints."
+
 Decisions already made with the user:
 1. **Hybrid agent.** The graph Lambda has no equivalent of the SQL Lambda's
    `buildExploreUrl` (the portal only accepts filters via a gzip+base64 `qw0`
@@ -445,9 +510,22 @@ Decisions already made with the user:
 - Add a `cckp:`-namespace `FILTER` to `get_schema()`, and scope it to the
   resolved graph too — otherwise it still walks every snapshot's schema
   triples even once type-filtered.
-- Spot-check `get_shape()` against a real class during implementation (should
-  already be correctly scoped via `sh:targetClass`; confirm it also gets the
-  `GRAPH` wrapper, don't assume).
+- **`get_shape()` needs a real decision, not just a spot-check — see finding
+  #9.** Source inspection of `kg-pipeline/schema/cckp_portal.shacl.ttl`
+  found only two `sh:targetClass`-based shapes (`Dataset`, `Grant`); every
+  other shape in that file targets via `sh:targetSubjectsOf
+  cckp:{property}` instead, and no second/generated SHACL file exists to
+  cover `Publication`/`Tool`/`EducationalResource`. Confirm live first
+  (`make sparql-test QUERY='SELECT ?shape WHERE { GRAPH
+  <urn:sagebrain:cckp:...> { ?shape a sh:NodeShape ; sh:targetClass
+  cckp:Publication } }'` — the live graph could differ from this
+  unmerged branch) whether `get_shape("Publication")` really does come back
+  empty; if so, pick one of finding #9's three options (fall back to
+  `sh:targetSubjectsOf` shapes for that class's join properties, or
+  document the `Dataset`/`Grant`-only limitation plainly in the
+  Instruction) rather than shipping a tool that silently returns nothing
+  for 3 of 5 classes. Also confirm it gets the `GRAPH` wrapper regardless
+  of which option is chosen.
 - **New: add a shared `_ensure_limit(query: str, default_limit: int = 200) ->
   str` helper and run every submitted query through it (see finding #8) —
   code-level enforcement, not just an Instruction-text reminder.** Regex-check
@@ -610,14 +688,22 @@ Rewrite to reach parity with `cloudformation.sql.yaml`'s structure:
     over a class with 1,000+ rows (`cckp:Dataset`, `cckp:Publication`) can
     fail past a ~400KB response even after the query itself succeeded.
   - **Ontology/example-query section**: rewrite using the confirmed real
-    `cckp:Dataset` property list above; pull the equivalent lists for
-    `Publication`/`Tool`/`Grant`/`EducationalResource` via one more `getShape`
-    or property-count query per class during implementation before finalizing
-    this section (cheap, same pattern already used for Dataset). Since the
-    Lambda injects the `GRAPH` wrapper server-side, example queries shown
-    here should stay in the plain `?x a cckp:Dataset ; ...` form (no `GRAPH`
-    clause in the agent-facing examples) — don't teach the agent to write
-    graph URIs itself, that's the Lambda's job now, not the LLM's.
+    `cckp:Dataset`/`cckp:Publication` property lists above; pull the
+    equivalent lists for `Tool`/`Grant`/`EducationalResource` (Verification
+    §1) before finalizing this section. Since the Lambda injects the `GRAPH`
+    wrapper server-side, example queries shown here should stay in the plain
+    `?x a cckp:Dataset ; ...` form (no `GRAPH` clause in the agent-facing
+    examples) — don't teach the agent to write graph URIs itself, that's the
+    Lambda's job now, not the LLM's.
+    **Include a linked-resources example per finding #9's confirmed join
+    map, using `Ref` properties exclusively** — `?pub cckp:datasetRef
+    ?dataset` (Publication→Dataset), `?dataset cckp:pubMedIdRef ?pub`
+    (Dataset→Publication), `?tool cckp:datasetRef ?dataset` /
+    `?tool cckp:pubMedIdRef ?pub` (Tool→Dataset/Publication),
+    `?edu cckp:publicationIdRef ?pub` (EducationalResource→Publication), and
+    `?x cckp:grantNumberRef ?grant` for every class's Grant back-reference —
+    never the bare `dataset`/`pubMedId`/`publicationId`/`grantNumber`
+    literal fields for a join, only for displaying the raw value.
 - **ActionGroups**: keep `cckp-graph-rag-actions` (schema updated for the new
   `{headers, rows, count}` response shape). Add `cckp-url-builder-actions`
   with an OpenAPI schema trimmed to **only** `/explore-url` — copy
