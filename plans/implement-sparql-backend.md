@@ -407,23 +407,92 @@ the plan as written, the other simplifies a design decision already made:**
      properties for every cross-class join in the Instruction's
      linked-resources examples, never the plain `{field}` literal.**
    - **The full join map, confirmed from `cckp_portal.linkml.yaml`'s
-     `cckp_join` annotations (far more complete than what this plan had
-     before — it only knew about Publication↔Dataset):**
-     | Source `Class.field` | → Target | Emits |
-     |---|---|---|
-     | `Dataset.pubMedId` | `Publication.pubMedId` | `cckp:pubMedIdRef` → `cckp:Publication` |
-     | `Dataset.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` |
-     | `Publication.dataset` | `Dataset.datasetAlias` | `cckp:datasetRef` → `cckp:Dataset` |
-     | `Publication.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` |
-     | `Tool.pubMedId` | `Publication.pubMedId` | `cckp:pubMedIdRef` → `cckp:Publication` |
-     | `Tool.datasets` | `Dataset.datasetAlias` | `cckp:datasetRef` → `cckp:Dataset` |
-     | `Tool.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` |
-     | `EducationalResource.publicationId` | `Publication.pubMedId` | `cckp:publicationIdRef` → `cckp:Publication` |
-     | `EducationalResource.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` |
+     `cckp_join` annotations AND cross-checked live against all five classes
+     (2026-09-22, via `make sparql-test`) — far more complete than what this
+     plan had before, and one entry corrected from what the schema alone
+     implied:**
+     | Source `Class.field` | → Target | Emits | Live-confirmed |
+     |---|---|---|---|
+     | `Dataset.pubMedId` | `Publication.pubMedId` | `cckp:pubMedIdRef` → `cckp:Publication` | yes (Dataset side, earlier session) |
+     | `Dataset.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` | yes |
+     | `Publication.dataset` | `Dataset.datasetAlias` | `cckp:datasetRef` → `cckp:Dataset` | yes — 394/4,773 resolve |
+     | `Publication.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` | yes — 5,179/5,180 resolve |
+     | `Tool.pubMedId` | `Publication.pubMedId` | `cckp:pubMedIdRef` → `cckp:Publication` | yes — 298/332 resolve |
+     | `Tool.datasets` | `Dataset.datasetAlias` | **`cckp:datasetsRef`** (plural — corrected below) → `cckp:Dataset` | yes — only 2/331 Tools even have a `datasets` value |
+     | `Tool.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` | yes — 349/349 resolve |
+     | `EducationalResource.publicationId` | `Publication.pubMedId` | `cckp:publicationIdRef` → `cckp:Publication` | **schema says yes, live shows 0/1 resolved** — only one EducationalResource has any `publicationId` value at all today, and it didn't resolve; too small a sample to call this broken, but don't assume it works without re-checking once more instances exist |
+     | `EducationalResource.grantNumber` | `Grant.grantNumber` | `cckp:grantNumberRef` → `cckp:Grant` | yes — 5/10 resolve |
 
-     Every class joins to `Grant` via `grantNumber`/`grantNumberRef` — the
-     Instruction's linked-resources section should cover all four of these,
-     not just the Publication↔Dataset pair this plan previously knew about.
+     **Correction to the naming rule**: the `Ref` suffix mirrors the exact
+     source field name, not a fixed singular — `Tool`'s field is `datasets`
+     (plural, since a tool can relate to multiple datasets), so its real
+     join property is **`cckp:datasetsRef`**, not `cckp:datasetRef`. (An
+     earlier draft of this table had this wrong; corrected here from the
+     live Tool query.) Every class's `grantNumber`→`grantNumberRef` join
+     confirmed live across all four consumer classes — the Instruction's
+     linked-resources section should cover Grant back-references from every
+     class, not just Publication↔Dataset.
+
+   - **A third, separate linking mechanism exists beyond `cckp_join` — SCDM
+     crosswalk resolution — confirmed directly from
+     `kg-pipeline/scripts/link_scdm.py`'s own source and docstring, not just
+     inferred from test names.** It does NOT follow the `{field}Ref` naming
+     rule at all, and each of its four edge predicates has real, distinct
+     resolution logic behind it:
+     - **`cckp:institutionRef`** — `Grant.grantInstitution`/
+       `Grant.institutionAlias` values that resolve against an
+       institution→SCDM crosswalk (keyed off ROR IDs) both get linked to the
+       *same* minted `sagecdm:Organization` node via one merged predicate
+       name (not two) — "always minted, since a ROR id already *is* the
+       organization's identity (no review gate)." Confirmed live:
+       `grantInstitution`(207)/`institutionAlias`(206) → `institutionRef`(205).
+     - **`cckp:consortiumRef`** — `consortium` values (on `Dataset`,
+       `Publication`, `Tool`, and `Grant` — per the script's own docstring,
+       not just the one class this plan happened to sample) resolve against
+       a consortium→SCDM crosswalk, but **only for "reviewed" rows** — ones
+       with the human-curated description/status SCDM's Program class
+       requires; unreviewed rows are skipped, not asserted. Every
+       `consortium`/`consortiumRef` pair observed live so far resolved 1:1
+       (159/159 on Grant, 346/346 on Tool), consistent with every consortium
+       actually in use today already being on the reviewed list.
+     - **`cckp:investigatorRef` / `cckp:contributorRef`** — **provisional**
+       `sagecdm:Person` *stubs* (each flagged with its own `cckp:provisional`
+       triple), minted from `Grant.investigator` and
+       `EducationalResource.contributors` — both free-text fields that are
+       "sometimes several PI names crammed into one comma-separated string."
+       `split_person_names()` splits these into one stub per distinct person
+       (merging entries whose first/last name matches and whose middle
+       name/initial is compatible), which is why `investigatorRef` count
+       (379) exceeds both `investigator`'s own triple count (160) and the
+       total number of Grants (159) — one Grant's literal can produce
+       several `investigatorRef` edges. **The script's own docstring flags a
+       known false-positive case in this heuristic** and explicitly says
+       this mechanism is "capture, don't resolve" — it deliberately never
+       matches against any real Person registry. **Instruction implication**:
+       if the agent ever surfaces an investigator/contributor name reached
+       via `investigatorRef`/`contributorRef`, it should be presented as a
+       best-effort, unverified extraction from the source string — not as a
+       confirmed identity — mirroring how other disclosure caveats in this
+       plan (e.g. dataset restriction status) already avoid overstating
+       certainty the backend doesn't actually have.
+     - All four SCDM-link predicates are technically emitted to a separate
+       file (`data/rdf/scdm_links.ttl`) rather than `cckp_kg.ttl` itself, but
+       this is an internal pipeline-staging detail — the live queries this
+       session already ran confirm these triples end up in the same
+       queryable `urn:sagebrain:cckp:{date}` named graph as everything else,
+       so nothing about the Lambda's own `GRAPH`-scoping design needs to
+       change on account of it.
+     - **Practical implication for the Instruction, restated**: don't teach
+       the agent "any `{field}` has a matching `{field}Ref`" as a general
+       rule. It holds for `cckp_join`-based joins between CCKP classes
+       (`datasetRef`/`datasetsRef`, `pubMedIdRef`, `publicationIdRef`,
+       `grantNumberRef`), but the four SCDM-crosswalk Refs above have their
+       own names, resolve to a *different kind of node* (an SCDM
+       Organization/Program/Person, not a `cckp:Dataset`/`cckp:Publication`/
+       `cckp:Grant` instance), and one of them (`institutionRef`) doesn't
+       even mirror its source field name. Document both groups as their own
+       explicit lists in the Instruction rather than teaching a rule that
+       only covers one of them.
    - **`get_shape()` will most likely return empty for `Publication`,
      `Tool`, and `EducationalResource` as currently designed — this is no
      longer a "spot-check, probably fine" item, it's a concrete predicted
@@ -739,12 +808,19 @@ Rewrite to reach parity with `cloudformation.sql.yaml`'s structure:
     **Include a linked-resources example per finding #9's confirmed join
     map, using `Ref` properties exclusively** — `?pub cckp:datasetRef
     ?dataset` (Publication→Dataset), `?dataset cckp:pubMedIdRef ?pub`
-    (Dataset→Publication), `?tool cckp:datasetRef ?dataset` /
+    (Dataset→Publication), `?tool cckp:datasetsRef ?dataset` (**plural** —
+    mirrors Tool's own `datasets` field, not `datasetRef`) /
     `?tool cckp:pubMedIdRef ?pub` (Tool→Dataset/Publication),
     `?edu cckp:publicationIdRef ?pub` (EducationalResource→Publication), and
     `?x cckp:grantNumberRef ?grant` for every class's Grant back-reference —
-    never the bare `dataset`/`pubMedId`/`publicationId`/`grantNumber`
-    literal fields for a join, only for displaying the raw value.
+    never the bare `dataset`/`datasets`/`pubMedId`/`publicationId`/
+    `grantNumber` literal fields for a join, only for displaying the raw
+    value. Keep the SCDM-crosswalk `Ref`s (`institutionRef`/
+    `consortiumRef`/`investigatorRef`/`contributorRef`) as a **separate**
+    documented list, not folded into this same `{field}Ref` pattern — they
+    don't follow it (see finding #9's SCDM addendum), and
+    `investigatorRef`/`contributorRef` results should be presented as
+    best-effort extractions, not confirmed identities.
 - **ActionGroups**: keep `cckp-graph-rag-actions` (schema updated for the new
   `{headers, rows, count}` response shape). Add `cckp-url-builder-actions`
   with an OpenAPI schema trimmed to **only** `/explore-url` — copy
@@ -837,29 +913,39 @@ rediscovering it later as a confusing false failure.
 
 ## Verification
 
-1. **Schema completion** (next step, before finalizing Instruction text):
-   pull real property lists for `Publication`/`Tool`/`Grant`/
-   `EducationalResource` the same way Dataset's was confirmed. The
+1. **Schema completion — DONE, all five classes confirmed live (2026-09-22),
+   plus grounded in `kg-pipeline`'s actual source (finding #9).** The
    graph-enumeration query confirmed the live CCKP graph is
-   `urn:sagebrain:cckp:2026-09-15` (2026-09-22) — will need re-checking for
-   drift if a second CCKP snapshot lands before this step finishes. Use
-   `make sparql-test` (confirmed working from the user's machine now — see
-   finding #4), one property-count query per remaining class:
+   `urn:sagebrain:cckp:2026-09-15` — re-check for drift if a second CCKP
+   snapshot lands before implementation starts. Command pattern used (`make
+   sparql-test`, auto-prepending the real deployed Lambda's own
+   `DEFAULT_PREFIXES`, no manual `PREFIX cckp: ...` needed):
    ```bash
    make sparql-test QUERY='SELECT ?p (COUNT(*) AS ?n) WHERE { GRAPH <urn:sagebrain:cckp:2026-09-15> { ?s a cckp:Tool ; ?p ?o } } GROUP BY ?p ORDER BY DESC(?n)'
    ```
-   substituting `Grant`/`EducationalResource` for `Tool` on repeat runs (and
-   the current graph URI, if it's changed by then). No `PREFIX cckp: ...`
-   needed — `make sparql-test` auto-prepends the real deployed Lambda's own
-   `DEFAULT_PREFIXES`.
-   - **`Publication` — done** (2026-09-22, see finding #2's addendum above):
-     confirmed real property list, and a genuinely important finding —
-     `cckp:dataset` vs. `cckp:datasetRef` are two different properties with
-     very different fill rates (4,771/4,773 vs. 394/4,773), and the smaller
-     one is the more likely real link. Needs a spot-check (does a
-     `datasetRef` value actually resolve to a real `cckp:Dataset` node?)
-     before finalizing the linked-resources example query.
-   - **`Tool`/`Grant`/`EducationalResource` — still open.**
+   - **`Dataset` — done** (original smoke-testing session; property list in
+     finding #2 above).
+   - **`Publication` — done** (finding #2's addendum): confirmed real
+     property list. Surfaced the `dataset` vs. `datasetRef` distinction,
+     since resolved with certainty via finding #9's source-level
+     confirmation (`datasetRef` is the real, SHACL-guaranteed link).
+   - **`Tool` — done** (finding #9): confirmed real property list; corrected
+     the join-map table entry from `datasetRef` to the actual live property
+     name, **`datasetsRef`** (plural, mirroring Tool's plural `datasets`
+     field) — only 2/331 Tools have this field populated at all.
+   - **`Grant` — done** (finding #9): confirmed real property list;
+     surfaced the SCDM-crosswalk linking mechanism (`institutionRef`,
+     `consortiumRef`, `investigatorRef`) as a third, differently-named
+     class of `Ref` property distinct from `cckp_join`-based joins.
+   - **`EducationalResource` — done** (finding #9): confirmed real property
+     list; surfaced `contributorRef` (same provisional-Person-stub pattern
+     as `investigatorRef`), and a live data-quality note — the schema
+     declares `publicationId` → `Publication.pubMedId` via `cckp_join`, but
+     the current snapshot has only one `EducationalResource` with any
+     `publicationId` value, and it didn't resolve to a `publicationIdRef`.
+     Too small a sample to call the join mechanism broken, but don't assume
+     it works for this specific class without re-checking once more
+     instances exist.
 2. **Unit tests**: `cd agents/cckp-copilot/lambda/cckpGraphRag && pytest` —
    the suite needs real rewriting (see above), not just a pass/fail check,
    since the request/response contract changed.
