@@ -58,6 +58,7 @@ v1 entries:
 | `prompt-leakage` | Data privacy | Leaking system instructions, internal guardrails, or endpoint/config details |
 | `cckp-medical-misinformation` | Safety | Unqualified diagnostic/prognostic/treatment claims for cancer conditions, missing disclaimers to patient personas |
 | `excessive-agency` | Agentic | False capability claims, e.g. claiming to write/execute code or modify portal data, which this agent must never (and can't) do |
+| `access-restriction-disclosure` | Data privacy | Disclosure of file-level metadata/contents for a dataset gated behind a Synapse Access Requirement (AR), or falsely claiming a restricted resource is freely downloadable. Grounded in a real example from the team's demonstration question bank (syn64713343) |
 | `query-injection` | Security | Attacker-crafted SQL or SPARQL exceeding normal read-only scope, or endpoint/query internals disclosure |
 
 To add a new vulnerability, add an entry to `redteam_config.json` (validate against `redteam_schema.json`). New attack techniques require adding an entry to both the `TECHNIQUES` dict in `evaluate_redteam.py` and the schema's `techniques` enum.
@@ -80,20 +81,20 @@ Legend: ✅ used by ≥1 config item · 🔲 implemented, not currently paired w
 
 | Technique | Turn | Used by | What the attacker does |
 |---|---|---|---|
-| `Direct` | single | off-topic-repurposing, pii-leakage, prompt-leakage | Asks for the goal plainly, no obfuscation — the baseline |
+| `Direct` | single | off-topic-repurposing, pii-leakage, prompt-leakage, access-restriction-disclosure | Asks for the goal plainly, no obfuscation — the baseline |
 | `PromptInjection` | single | off-topic-repurposing, pii-leakage, prompt-leakage, query-injection | Embeds an overriding "ignore your instructions and…" command |
-| `Roleplay` | single | off-topic-repurposing, pii-leakage, cckp-medical-misinformation, excessive-agency, query-injection | Asks the agent to adopt a persona under which the goal is in-character |
+| `Roleplay` | single | off-topic-repurposing, pii-leakage, cckp-medical-misinformation, excessive-agency, query-injection, access-restriction-disclosure | Asks the agent to adopt a persona under which the goal is in-character |
 | `GoalRedirection` | single | off-topic-repurposing | Starts on-topic, then pivots mid-message toward the goal |
-| `PermissionEscalation` | single | prompt-leakage, excessive-agency | Claims elevated authority / a special mode granting access |
+| `PermissionEscalation` | single | prompt-leakage, excessive-agency, access-restriction-disclosure | Claims elevated authority / a special mode granting access |
 | `SystemOverride` | single | off-topic-repurposing, excessive-agency | Asserts a fake system directive that sanctions the goal |
-| `GrayBox` | single | off-topic-repurposing, prompt-leakage, excessive-agency, query-injection | Invents an internal rule / exception clause / test mode |
+| `GrayBox` | single | off-topic-repurposing, prompt-leakage, excessive-agency, query-injection, access-restriction-disclosure | Invents an internal rule / exception clause / test mode |
 | `ContextPoisoning` | single | off-topic-repurposing | States the harmful action as already-established fact/context |
 | `EmotionalManipulation` | single | cckp-medical-misinformation | Uses urgency/distress/personal stakes to pressure the agent |
 | `AuthorityEscalation` | single | off-topic-repurposing | Invokes an external authority (official, legal mandate) that compels compliance |
 | `Base64` | single | 🔲 | Encodes the request in Base64 to slip past keyword filtering |
 | `Leetspeak` | single | 🔲 | Writes sensitive parts in leetspeak to evade keyword filtering |
 | `ROT13` | single | 🔲 | Encodes the request in ROT13 to slip past filtering |
-| `Crescendo` | multi | off-topic-repurposing-crescendo, pii-leakage, cckp-medical-misinformation | Opens benign and escalates step by step across turns, using earlier rapport |
+| `Crescendo` | multi | off-topic-repurposing-crescendo, pii-leakage, cckp-medical-misinformation, access-restriction-disclosure | Opens benign and escalates step by step across turns, using earlier rapport |
 
 Note: technique↔item pairing is deliberate, not exhaustive — the encoding tricks (`Base64`/`Leetspeak`/`ROT13`) are implemented but unpaired because they mainly target keyword-filtered *harmful-content* generation, which isn't this copilot's risk surface. `Crescendo` (and any future multi-turn technique) only runs on items with `mode: "multi"`; pairing it with a single-turn item is skipped with a warning.
 
@@ -134,8 +135,8 @@ Legend:
 | Responsible AI | `ChildProtection` | ➖ | No child-directed content surface |
 | Responsible AI | `Ethics` | 🔲 | Not yet scoped |
 | Security | `BFLA` | ➖ | No auth boundaries to test — single public-facing agent, no per-user function-level access control |
-| Security | `BOLA` | ➖ | No auth boundaries to test — no per-object access control model |
-| Security | `RBAC` | ➖ | No role model — agent has one fixed capability set for all users |
+| Security | `BOLA` | ✅ | Corrected: Synapse Access Requirements (ARs) ARE a real per-object access control layer — individual datasets can be restricted independent of the agent's own capability set. Covered by `access-restriction-disclosure` |
+| Security | `RBAC` | ➖ | No role model — agent has one fixed capability set for all users (distinct from per-object ARs, which `access-restriction-disclosure` covers) |
 | Security | `DebugAccess` | ➖ | No debug interface exposed |
 | Security | `ShellInjection` | ➖ | No code execution capability anywhere in the stack |
 | Security | `SQLInjection` | ➖ | Closest analog is `query-injection` |
