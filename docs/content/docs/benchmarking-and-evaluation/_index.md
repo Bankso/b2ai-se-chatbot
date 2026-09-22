@@ -17,7 +17,7 @@ This is where the bulk of the effort goes. The core loop is:
    aws bedrock-agent prepare-agent --agent-id <ID>
    ```
 
-2. **Run evals** to measure routing accuracy, answer quality, and adversarial resistance:
+2. **Run evals** to measure routing accuracy, answer quality, resource-backend correctness, and adversarial resistance:
 
    ```bash
    cd benchmark/kb-routing
@@ -25,6 +25,9 @@ This is where the bulk of the effort goes. The core loop is:
 
    cd ../general-help
    python evaluate_bedrock_agent.py
+
+   cd ../resource-search
+   python evaluate_resource_search.py --judge
 
    cd ../redteam
    python evaluate_redteam.py
@@ -37,7 +40,7 @@ This is where the bulk of the effort goes. The core loop is:
 
 ## What to benchmark
 
-Each knowledge source should have its own benchmark that tests whether the agent gives good answers from that source in isolation. If your agent only has a docs KB, you need a docs benchmark. If it also has a SPARQL graph, you need a graph benchmark too.
+Each knowledge source should have its own benchmark that tests whether the agent gives good answers from that source in isolation. If your agent only has a docs KB, you need a docs benchmark. If it also has a SPARQL graph, you need a graph benchmark too. This per-source eval needs to check actual correctness (right filter, right join, right status) — a source-selection benchmark alone can't catch a wrong-but-confidently-delivered answer, since it only checks *which* source was consulted, never what was asked of it or what came back.
 
 If you have multiple sources, you should also have a **source selection benchmark** — a dataset that tests whether the agent routes questions to the correct source. This is critical because the best instructions in the world won't help if the agent queries the wrong source. The source selection benchmark is how you validate and iterate on the routing rules in your system prompt.
 
@@ -47,6 +50,7 @@ The CCKP Copilot has (or will have, once deployed):
 
 - **Source selection eval** (`benchmark/kb-routing/`) — multi-turn sessions labeled with the expected source per turn (docs, resource backend, redirect, or none). Measures whether the agent consults the right source, and whether it over-queries by consulting unnecessary sources. See [Source routing](/docs/benchmarking-and-evaluation/source-routing/).
 - **Docs KB eval** (`benchmark/general-help/`) — multiple-choice questions generated from help documentation, scored by an LLM judge against known correct answers. See [Grounded retrieval](/docs/benchmarking-and-evaluation/grounded-retrieval/).
+- **Resource-backend correctness eval** (`benchmark/resource-search/`) — the per-source eval for the SQL resource backend: decodes the agent's actual tool-call parameters from the Bedrock trace (not just whether it called the backend) and grades them against real, live-verified Synapse data across keyword search, multi-filter AND/OR combination, Publication↔Dataset joins, dataset-operation status (open/external/access-restricted), and redirect filter correctness. Exists because a real AND-vs-OR filter bug once shipped and was only caught manually — see `benchmark/resource-search/README.md`.
 - **Adversarial eval** (`benchmark/redteam/`) — an attacker LLM probes the agent with techniques like prompt injection, roleplay, and multi-turn escalation, and a judge LLM scores whether each attack succeeded. See [Red teaming](/docs/benchmarking-and-evaluation/red-teaming/).
 
 No CCKP agent has been deployed yet, so the datasets below carry over the NF Portal Copilot's structure as a starting scaffold but need fresh CCKP-domain content before they're meaningful — see each benchmark's README for what's still a placeholder.
