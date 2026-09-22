@@ -1,0 +1,282 @@
+[
+  {
+    "id": "kw-fibroblasts-publications",
+    "category": "keyword-search",
+    "question": "Show me publications about cancer associated fibroblasts",
+    "table": "publications",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {"must_include_any": ["fibroblast"]},
+    "gold_query": "SELECT COUNT(*) FROM syn21868591 WHERE LOWER(publicationTitle) LIKE '%fibroblast%' OR LOWER(abstract) LIKE '%fibroblast%'",
+    "persona": "REUSER",
+    "notes": "Demo bank example. gold_query live-verified 2026-09-22: 149 matches via this LIKE-based proxy. The real portal search index does fuzzy full-text matching, not strict substring LIKE, so treat the live gold count as a lower bound / sanity check (nonzero, same order of magnitude), not an exact target."
+  },
+  {
+    "id": "kw-fibroblasts-datasets",
+    "category": "keyword-search",
+    "question": "Show me datasets about cancer associated fibroblasts",
+    "table": "datasets",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {"must_include_any": ["fibroblast"]},
+    "gold_query": "SELECT COUNT(*) FROM syn21897968 WHERE LOWER(datasetName) LIKE '%fibroblast%' OR LOWER(description) LIKE '%fibroblast%'",
+    "persona": "REUSER",
+    "notes": "Demo bank example. gold_query live-verified 2026-09-22: 50 matches (datasetName alone gives only 20 — description carries real matches too, confirmed by actually running both variants rather than assuming)."
+  },
+  {
+    "id": "kw-reactive-oxidation-datasets",
+    "category": "keyword-search",
+    "question": "Can you find datasets related to reactive oxidation?",
+    "table": "datasets",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {"must_include_any": ["oxidation"]},
+    "gold_query": "SELECT COUNT(*) FROM syn21897968 WHERE LOWER(datasetName) LIKE '%oxidation%' OR LOWER(description) LIKE '%oxidation%'",
+    "persona": "REUSER",
+    "notes": "Demo bank example. gold_query live-verified 2026-09-22: exactly 1 match (in `description`, not `datasetName` — confirmed by actually running both column variants, not assumed) — a deliberately narrow, discriminating case (near-zero-result topic), useful for catching an agent that over-broadens the search or fabricates unrelated hits rather than reporting the single real match."
+  },
+  {
+    "id": "kw-lymphatic-publications",
+    "category": "keyword-search",
+    "question": "Show me publications about lymphatic involvement",
+    "table": "publications",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {"must_include_any": ["lymphatic"]},
+    "gold_query": "SELECT COUNT(*) FROM syn21868591 WHERE LOWER(publicationTitle) LIKE '%lymphatic%' OR LOWER(abstract) LIKE '%lymphatic%' OR LOWER(keywords) LIKE '%lymphatic%'",
+    "persona": "REUSER",
+    "notes": "Demo bank example, also used in kb-routing's nci-site-visit-full-flow session (with a 'group by research theme' follow-up not repeated here — that formatting behavior is out of scope for this benchmark). gold_query live-verified 2026-09-22: 59 matches."
+  },
+  {
+    "id": "kw-chromosome-instability-publications",
+    "category": "keyword-search",
+    "question": "Can you find publications on chromosome instability?",
+    "table": "publications",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {"must_include_any": ["chromosom"]},
+    "gold_query": "SELECT COUNT(*) FROM syn21868591 WHERE LOWER(publicationTitle) LIKE '%chromosom%' OR LOWER(abstract) LIKE '%chromosom%' OR LOWER(keywords) LIKE '%chromosom%'",
+    "persona": "REUSER",
+    "notes": "Demo bank example. The exact phrase 'chromosome instability' returned 0 hits via a strict substring LIKE check (verified 2026-09-22); broadening to the stem 'chromosom' returned 123. The real portal search (fuzzy NATURAL_LANGUAGE full-text) very likely matches this topic in practice — this item's gold_query is intentionally the broader stem match, and a human reviewer (Step 2) should confirm the real backend actually surfaces relevant results for this exact demo-bank phrase before trusting this item's pass/fail signal."
+  },
+  {
+    "id": "mf-and-facets-glioma-cyclic-immunofluorescence",
+    "category": "multi-filter",
+    "question": "How many publications combine the tumor type glioma with the Cyclic Immunofluorescence assay?",
+    "table": "publications",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {
+      "intent": "AND",
+      "facets": [
+        {"columnName": "tumorType", "values": ["Glioma"]},
+        {"columnName": "assay", "values": ["Cyclic Immunofluorescence"]}
+      ]
+    },
+    "gold_query": "SELECT COUNT(*) FROM syn21868591 WHERE tumorType LIKE '%\"Glioma\"%' AND assay LIKE '%Cyclic Immunofluorescence%'",
+    "persona": "REUSER",
+    "notes": "Reuses the exact pair already live-tested and documented in plans/fix-searchexpressions-and-semantics.md as the confirmed-working facets-AND example: tumorType=Glioma (108 alone) + assay=Cyclic Immunofluorescence (45 alone) -> true intersection. Re-verified live 2026-09-22: 108, 45, 1 respectively (identical to the plan's numbers). A correct answer is 1, computed via a true AND (either a facet-shaped sqlQuery WHERE or, if using buildExploreUrl, selectedFacets on both columns) -- not the ~152 a naive OR/union of the two individual counts would wrongly suggest."
+  },
+  {
+    "id": "mf-and-trap-glioma-fluorescence-microscopy",
+    "category": "multi-filter",
+    "question": "How many publications discuss both glioma and fluorescence microscopy?",
+    "table": "publications",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {
+      "intent": "AND",
+      "must_include_all": ["glioma", "fluorescence microscopy"],
+      "known_trap": "No real 'Fluorescence Microscopy' assay facet value exists (only 'Cyclic Immunofluorescence' does), so this AND cannot be expressed via facets -- it must be a true AND in the sqlQuery WHERE clause (both terms required in the same row), not two independently-OR'd LIKE/searchExpressions-style clauses."
+    },
+    "gold_query": "SELECT COUNT(*) FROM syn21868591 WHERE (LOWER(publicationTitle) LIKE '%glioma%' OR LOWER(abstract) LIKE '%glioma%' OR LOWER(keywords) LIKE '%glioma%' OR LOWER(tumorType) LIKE '%glioma%') AND (LOWER(publicationTitle) LIKE '%fluorescence microscopy%' OR LOWER(abstract) LIKE '%fluorescence microscopy%' OR LOWER(keywords) LIKE '%fluorescence microscopy%')",
+    "judge_check": "Did the agent report a true-intersection count (both concepts required in the same record), rather than the much larger count you'd get from unioning/OR-ing the two terms separately?",
+    "persona": "REUSER",
+    "notes": "This is the exact real, previously-shipped bug (plans/enable_and_filtering.md / plans/fix-searchexpressions-and-semantics.md): the agent found 6 true matches via sqlQuery but then built a searchExpressions-based redirect that showed 1,449 results -- three orders of magnitude off -- because multiple searchExpressions entries OR/union rather than AND. Re-verified live 2026-09-22 with current data: glioma alone=166, fluorescence microscopy alone=21, true AND=1 (numbers have shifted since the original bug report as the portal has grown, which is exactly why this benchmark uses live gold_query rather than the old frozen numbers). See mf-redirect-and-trap-glioma-fluorescence-microscopy for the redirect-building counterpart of this same trap."
+  },
+  {
+    "id": "mf-or-glioma-atac-or-rna-publications",
+    "category": "multi-filter",
+    "question": "Help me find publications about glioma that used ATAC-seq or RNA-seq data",
+    "table": "publications",
+    "expected_tool": "any",
+    "expected_shape": {
+      "intent": "OR-within-AND",
+      "facets": [{"columnName": "tumorType", "values": ["Glioma"]}],
+      "or_group": {"columnName": "assay", "values": ["ATAC-Seq", "RNA Sequencing"], "acceptable_mechanisms": ["searchExpressions_union", "single_facet_multi_value"]}
+    },
+    "persona": "REUSER",
+    "notes": "Demo bank's own phrasing, explicit 'or' -- matches searchExpressions' confirmed union behavior naturally, so this is the correctly-desired-OR case (contrast with the AND-trap items above). Both 'ATAC-Seq' and 'RNA Sequencing' are real controlled assay values (confirmed live 2026-09-22). Whether a single facet request with multiple values ORs within that column (standard faceted-search convention) or must go through two searchExpressions entries is NOT independently confirmed against this portal's live behavior in this session -- flagged for Step 2 human validation to resolve empirically (the same way the AND/OR bug above was originally caught: by live-testing, not by assuming)."
+  },
+  {
+    "id": "mf-and-human-glioma-atac-rna-datasets",
+    "category": "multi-filter",
+    "question": "Help me find human glioma ATAC-seq and RNA-seq datasets",
+    "table": "datasets",
+    "expected_tool": "any",
+    "expected_shape": {
+      "intent": "OR-within-AND",
+      "facets": [
+        {"columnName": "species", "values": ["Human"]},
+        {"columnName": "tumorType", "values": ["Glioma"]}
+      ],
+      "or_group": {"columnName": "assay", "values": ["ATAC-Seq", "RNA Sequencing"], "acceptable_mechanisms": ["searchExpressions_union", "single_facet_multi_value"]}
+    },
+    "gold_query": "SELECT COUNT(*) FROM syn21897968 WHERE species LIKE '%Human%' AND tumorType LIKE '%\"Glioma\"%' AND (assay LIKE '%ATAC-Seq%' OR assay LIKE '%RNA Sequencing%')",
+    "persona": "REUSER",
+    "notes": "Demo bank's datasets-table companion to mf-or-glioma-atac-or-rna-publications. Despite the plain-English 'and' between 'ATAC-seq' and 'RNA-seq', context (paired with the publications version's explicit 'or') and the underlying assay values being mutually exclusive per-row in many cases indicates this is the same either-assay intent, not a same-row-must-have-both requirement -- Step 2 should confirm this reading before use. species='Human' and tumorType='Glioma' are true AND requirements. gold_query live-verified 2026-09-22: 8 matching datasets (Human + Glioma + (ATAC-Seq or RNA Sequencing)); individually Glioma+ATAC-Seq=5, Glioma+RNA Sequencing=13."
+  },
+  {
+    "id": "lr-publication-to-dataset-forward",
+    "category": "linked-resources",
+    "question": "Is there a dataset linked to the publication with PubMed ID 37922910?",
+    "table": "publications",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {
+      "join": {
+        "acceptable_directions": ["publications.dataset->datasets.datasetAlias", "datasets.pubMedId->publications.pubMedId"]
+      },
+      "expect_match": true
+    },
+    "gold_query": "SELECT dataset FROM syn21868591 WHERE pubMedId = '37922910'",
+    "persona": "REUSER",
+    "notes": "Real, live-verified link (2026-09-22): publication pubMedId=37922910 ('Anti-PD-1 immunotherapy with androgen deprivation therapy induces robust immune infiltration in metastatic castration-sensitive prostate cancer') has dataset='10.17632/5nnw8xrh5m.1', which matches datasets.datasetAlias for syn59530754 (a Mendeley-hosted dataset whose own pubMedId field is ['37922910']) -- confirmed linked in BOTH directions simultaneously, so either join path correctly resolves it. Companion to lr-dataset-to-publication-reverse (same real pair, opposite direction) and lr-no-linked-dataset-negative (a real pair with no link)."
+  },
+  {
+    "id": "lr-dataset-to-publication-reverse",
+    "category": "linked-resources",
+    "question": "What publications are linked to the dataset syn59530754?",
+    "table": "datasets",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {
+      "join": {
+        "acceptable_directions": ["datasets.pubMedId->publications.pubMedId", "publications.dataset->datasets.datasetAlias"]
+      },
+      "expect_match": true
+    },
+    "gold_query": "SELECT pubMedId FROM syn21897968 WHERE datasetId = 'syn59530754'",
+    "persona": "REUSER",
+    "notes": "Reverse direction of lr-publication-to-dataset-forward's same real, live-verified pair. gold: pubMedId=['37922910']."
+  },
+  {
+    "id": "lr-no-linked-dataset-negative",
+    "category": "linked-resources",
+    "question": "Is there a dataset linked to the publication with PubMed ID 42151118?",
+    "table": "publications",
+    "expected_tool": "sqlQuery",
+    "expected_shape": {
+      "join": {
+        "acceptable_directions": ["publications.dataset->datasets.datasetAlias", "datasets.pubMedId->publications.pubMedId"]
+      },
+      "expect_match": false
+    },
+    "gold_query": "SELECT dataset FROM syn21868591 WHERE pubMedId = '42151118'",
+    "persona": "REUSER",
+    "notes": "Negative case, live-verified 2026-09-22: publication pubMedId=42151118 ('A high-throughput modular microfluidic platform for versatile functional assays at single-cell level' / HiSCOPE) has dataset='Not Applicable' -- no linked dataset. Tests that the agent checks both join directions (per cloudformation.sql.yaml:328's explicit instruction) before concluding no link exists, and doesn't fabricate one when there genuinely isn't a match."
+  },
+  {
+    "id": "do-restricted-download-claim",
+    "category": "dataset-operations",
+    "question": "How can I download the dataset syn64713343 (the DCIS upstaging H&E imaging dataset)?",
+    "table": "datasets",
+    "expected_tool": "getDatasetFiles",
+    "expected_shape": {"id": "syn64713343"},
+    "known_facts": {
+      "id": "syn64713343",
+      "hosting": "synapse",
+      "restriction": "restricted",
+      "download_syn_id": "syn64713343"
+    },
+    "judge_check": "Did the agent claim or imply this dataset is freely downloadable, or otherwise fail to state that access is restricted / an Access Requirement applies?",
+    "persona": "REUSER",
+    "notes": "Same real dataset as the demo bank's own access-requirement example and benchmark/redteam's access-restriction-disclosure item -- this item tests the identical underlying mechanism (checkRestriction/getDatasetFiles) under a plain, non-adversarial ask rather than social-engineering pressure. Live-verified 2026-09-22 via Synapse's public restrictionInformation API: restrictionLevel=RESTRICTED_BY_TERMS_OF_USE, hasUnmetAccessRequirement=true, canDownload=false."
+  },
+  {
+    "id": "do-restricted-access-check",
+    "category": "dataset-operations",
+    "question": "Do I have access to the dataset syn64713343?",
+    "table": "datasets",
+    "expected_tool": "checkRestriction",
+    "expected_shape": {"id": "syn64713343"},
+    "known_facts": {
+      "id": "syn64713343",
+      "hosting": "synapse",
+      "restriction": "restricted",
+      "download_syn_id": "syn64713343"
+    },
+    "judge_check": "Did the agent correctly report that this dataset is access-restricted (not openly accessible)?",
+    "persona": "REUSER",
+    "notes": "Direct access-check phrasing (vs. do-restricted-download-claim's download phrasing) against the same real restricted resource, to check the answer is consistent regardless of how the question is asked."
+  },
+  {
+    "id": "do-external-geo-no-mirror",
+    "category": "dataset-operations",
+    "question": "Show me the files inside the dataset syn24985532 (GSE159681).",
+    "table": "datasets",
+    "expected_tool": "getDatasetFiles",
+    "expected_shape": {"id": "syn24985532"},
+    "known_facts": {
+      "id": "syn24985532",
+      "hosting": "external:NCBI Gene Expression Omnibus (GEO)",
+      "restriction": "open",
+      "download_syn_id": null
+    },
+    "judge_check": "Did the agent correctly explain that this dataset is hosted externally at GEO (rather than reporting a raw/confusing error, or incorrectly claiming the file listing failed because the dataset doesn't exist)?",
+    "persona": "REUSER",
+    "notes": "Live-verified 2026-09-22: sourceRepository='NCBI Gene Expression Omnibus (GEO)', downloadSynId=NULL, restrictionLevel=OPEN (no Access Requirement -- the missing downloadSynId is a hosting-location fact, not a restriction). Per the Lambda's own get_dataset_files() docstring, this is an EXPECTED shape (external hosting, no Synapse-side file entity to list), not an error -- an eval that doesn't know this could wrongly penalize a correct 'hosted externally at GEO' answer."
+  },
+  {
+    "id": "do-open-synapse-hosted",
+    "category": "dataset-operations",
+    "question": "Can I download the dataset syn61795461?",
+    "table": "datasets",
+    "expected_tool": "checkRestriction",
+    "expected_shape": {"id": "syn61795461"},
+    "known_facts": {
+      "id": "syn61795461",
+      "hosting": "synapse",
+      "restriction": "open",
+      "download_syn_id": "syn61795461"
+    },
+    "judge_check": "Did the agent correctly confirm this dataset is open and downloadable, without incorrectly hedging or claiming a restriction that doesn't exist?",
+    "persona": "REUSER",
+    "notes": "Live-verified 2026-09-22: restrictionLevel=OPEN, hasUnmetAccessRequirement=false, canDownload=true even for an unauthenticated caller -- a genuinely, fully public example. The counterpart of do-restricted-download-claim: tests that the agent doesn't over-hedge or refuse to confirm downloadability for a resource that really is open, which would be as wrong in the other direction as falsely claiming a restricted one is open."
+  },
+  {
+    "id": "rd-glioma-atac-rna-datasets-collection",
+    "category": "redirect",
+    "question": "Generate a link to the collection of human glioma ATAC-seq and RNA-seq datasets",
+    "table": "datasets",
+    "expected_tool": "buildExploreUrl",
+    "expected_shape": {
+      "table": "datasets",
+      "facets": [
+        {"columnName": "species", "values": ["Human"]},
+        {"columnName": "tumorType", "values": ["Glioma"]}
+      ],
+      "or_group": {"columnName": "assay", "values": ["ATAC-Seq", "RNA Sequencing"], "acceptable_mechanisms": ["searchExpressions_union", "single_facet_multi_value"]}
+    },
+    "persona": "REUSER",
+    "notes": "Demo bank's exact phrasing, redirect-flavored counterpart of mf-and-human-glioma-atac-rna-datasets. Grade by decoding the returned qw0 (base64 -> gzip -> JSON) and checking its facets/searchExpressions/table against expected_shape -- buildExploreUrl already self-verifies its own encoding round-trip at runtime, so this item only needs to check whether the DECODED filter shape matches intent, not whether the URL itself is well-formed."
+  },
+  {
+    "id": "mf-redirect-and-trap-glioma-fluorescence-microscopy",
+    "category": "redirect",
+    "question": "Generate a link to the collection of publications about glioma and fluorescence microscopy",
+    "table": "publications",
+    "expected_tool": "buildExploreUrl",
+    "expected_shape": {
+      "table": "publications",
+      "known_trap": "Because no real 'Fluorescence Microscopy' facet value exists, this AND-intent query cannot be built as a true intersection via buildExploreUrl (facets require a real controlled-vocabulary value; searchExpressions only union). There is no fully-correct qw0 for a true AND here."
+    },
+    "judge_check": "Did the agent's response avoid presenting the generated link as if it filters to the true intersection of both concepts (e.g. by claiming/implying the linked collection shows only records matching both 'glioma' and 'fluorescence microscopy'), given that a two-entry searchExpressions link actually unions to a much larger, mostly-irrelevant result set?",
+    "persona": "REUSER",
+    "notes": "The redirect-building counterpart of mf-and-trap-glioma-fluorescence-microscopy -- this is the exact shape of the real, previously-shipped bug (plans/enable_and_filtering.md): a correct sqlQuery count (1, per the sibling item) paired with a searchExpressions-based redirect silently showing ~1,449 results. Grading here is judge-assisted (via judge_check) rather than pure decoded-shape matching, since the failure is in what the agent CLAIMS about the link's filtering, not simply which tool params it passed -- a link built via two searchExpressions entries isn't itself wrong to offer, but describing it as an intersection is."
+  },
+  {
+    "id": "rd-fibroblasts-publications-collection",
+    "category": "redirect",
+    "question": "Redirect me to publications about cancer associated fibroblasts",
+    "table": "publications",
+    "expected_tool": "buildExploreUrl",
+    "expected_shape": {
+      "table": "publications",
+      "must_include_any": ["fibroblast"]
+    },
+    "persona": "REUSER",
+    "notes": "Simple single-concept redirect, companion to kw-fibroblasts-publications (same topic, this time explicitly asking to navigate rather than list results inline)."
+  }
+]

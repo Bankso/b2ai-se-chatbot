@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Resource Search Correctness Dataset",
+  "description": "Items for evaluating whether the CCKP Copilot's resource-backend tool calls (sqlQuery, buildExploreUrl, getDatasetFiles, getFileDetails, checkRestriction, countByType) are actually correct for ordinary, good-faith resource-discovery questions — not just whether the right source was consulted (see benchmark/kb-routing) or whether the agent resists adversarial pressure (see benchmark/redteam).",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "category", "question", "table", "expected_tool", "expected_shape", "persona"],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Unique identifier for this item (slug)."
+      },
+      "category": {
+        "type": "string",
+        "enum": ["keyword-search", "multi-filter", "linked-resources", "dataset-operations", "redirect"],
+        "description": "Which of the demo question bank's correctness-relevant sections this item covers."
+      },
+      "question": {
+        "type": "string",
+        "description": "The user's question as it would appear in the chat. Real resource IDs are given inline where a follow-up action (file listing, restriction check) targets a specific record, mirroring how the team's own demo question bank phrases these."
+      },
+      "table": {
+        "type": "string",
+        "enum": ["datasets", "publications", "tools", "grants", "education"],
+        "description": "Expected primary table alias (agents/cckp-copilot/lambda/cckpSqlRag/lambda_function.py's TABLES map)."
+      },
+      "expected_tool": {
+        "type": "string",
+        "enum": ["sqlQuery", "buildExploreUrl", "getColumns", "countByType", "getDatasetFiles", "getFileDetails", "checkRestriction", "any"],
+        "description": "Which action-group function a correct response should invoke. 'any' means either sqlQuery or buildExploreUrl is acceptable (the question doesn't specify whether a link is wanted)."
+      },
+      "expected_shape": {
+        "type": "object",
+        "description": "What a CORRECT tool call looks like, decoded from the actual trace (qw0 for buildExploreUrl, the sql/table params for sqlQuery, the id param for dataset-operations) — not a literal result. Conventions by category: keyword-search/multi-filter use {\"must_include_any\": [...]} (WHERE/searchExpressions terms) and/or {\"facets\": [{\"columnName\":..., \"values\":[...]}]} for AND-intent; linked-resources use {\"join\": {\"direction\": \"publications.dataset->datasets.datasetAlias\" | \"datasets.pubMedId->publications.pubMedId\", \"acceptable_directions\": [...]}}; dataset-operations use {\"id\": \"synXXXXXXX\"}; redirect uses the same shape as multi-filter plus {\"table\": ...} since the encoded qw0 embeds it.",
+        "additionalProperties": true
+      },
+      "gold_query": {
+        "type": "string",
+        "description": "Hand-verified SQL the evaluator runs directly against the live Synapse table at eval time (same mechanism sql_query() uses) to get a live, non-stale correctness signal. Omitted for items graded purely on expected_shape (e.g. most multi-filter/redirect items, where a live count adds little beyond the decoded filter-shape check)."
+      },
+      "known_facts": {
+        "type": "object",
+        "description": "dataset-operations items only: ground truth for the specific real resource(s) named in the question, verified live against Synapse's public restrictionInformation/entity endpoints (see README). Keys: id, hosting ('synapse' | 'external:<repo-name>'), restriction ('open' | 'restricted'), download_syn_id (nullable).",
+        "additionalProperties": true
+      },
+      "judge_check": {
+        "type": "string",
+        "description": "A specific yes/no correctness question for the LLM judge, used only where correctness lives in what the agent CLAIMS in its answer text rather than in the decoded tool-call shape alone (e.g. 'did the agent claim or imply this restricted resource is freely downloadable?', 'did the agent present the two-searchExpressions union as if it were an intersection?'). Omitted for items fully gradable from decoded shape/gold_query."
+      },
+      "persona": {
+        "type": "string",
+        "enum": ["CONTRIBUTOR", "REUSER", "FUNDER", "PATIENT", "X"],
+        "description": "User persona for the question, matching the other benchmarks' convention."
+      },
+      "notes": {
+        "type": "string",
+        "description": "Rationale, live-verification details, or grading caveats for this item."
+      }
+    }
+  }
+}
