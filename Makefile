@@ -32,6 +32,13 @@
 #   AWS_REGION             (default: us-east-1, matches the workflows)
 #   FOUNDATION_MODEL_ID    (default: anthropic.claude-sonnet-5)
 #   S3_BUCKET              (default: cckp-chatbot)
+#
+# `make sparql-test` is unrelated to deployment — a standalone connectivity/
+# smoke test against the live SageBrain SPARQL endpoint (see
+# plans/implement-sparql-backend.md). It needs a Synapse PAT: checks
+# ~/.sagebrain-pat first, then ~/.synapseConfig's `authtoken` field, or set
+# SPARQL_PAT yourself. Override QUERY to run something other than the
+# default graph-enumeration query.
 
 .DEFAULT_GOAL := help
 
@@ -69,7 +76,32 @@ SPARQL_LAMBDA_FN_PROD ?= Cephy-sparql-alpha-prod-graphrag
 
 CONFIRM_PROD = @echo "About to deploy to PRODUCTION ($(1)). Type 'yes' to continue:" && read -r ans && [ "$$ans" = "yes" ] || (echo "Aborted."; exit 1)
 
-.PHONY: help check-aws \
+# ---------------------------------------------------------------------------
+# SPARQL endpoint smoke test (not a deploy target — see plans/implement-sparql-backend.md)
+# ---------------------------------------------------------------------------
+
+SPARQL_TEST_ENDPOINT ?= https://vyar2xyj0k.execute-api.us-east-1.amazonaws.com/prod/query
+
+# The PAT is deliberately NOT a Make variable: `make -n` (dry-run) prints
+# fully-substituted recipe text regardless of `@` silencing, so any secret
+# assigned via `?=`/`$(shell ...)` here would leak into terminal
+# scrollback/history the moment anyone dry-runs this target. Resolution
+# (env SPARQL_PAT, then ~/.sagebrain-pat, then ~/.synapseConfig) happens
+# entirely inside scripts/sparql_test_query.py instead — see its
+# resolve_pat(). Export SPARQL_PAT yourself before calling `make
+# sparql-test` if you want to override the file-based lookup.
+
+# Default query resolves the open unknown in plans/implement-sparql-backend.md
+# finding #4: which named graphs actually exist right now, so the real CCKP
+# portal token in the graph URI can be confirmed. Override QUERY for anything
+# else, e.g.:
+#   make sparql-test QUERY='SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:sagebrain:cckp:2026-09-01> { ?s ?p ?o } }'
+QUERY ?= SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } } ORDER BY DESC(?g)
+
+POLL_INTERVAL ?= 3
+POLL_TIMEOUT ?= 90
+
+.PHONY: help check-aws sparql-test \
         deploy-sql-dev deploy-sql-dev-lambda deploy-sql-dev-stack \
         deploy-sql-prod deploy-sql-prod-lambda deploy-sql-prod-stack \
         deploy-sparql-dev deploy-sparql-dev-lambda deploy-sparql-dev-stack \
@@ -90,6 +122,11 @@ help:
 	@echo "  make deploy-sparql-dev / -lambda / -stack   same, for the SPARQL variant"
 	@echo "  make deploy-sparql-prod / -lambda / -stack  (not deployable yet — no hosted endpoint)"
 	@echo ""
+	@echo "  make sparql-test                  submit+poll a test SPARQL query against the live"
+	@echo "                                     SageBrain endpoint (default: enumerate named graphs)"
+	@echo "                                     override with QUERY=... , SPARQL_TEST_ENDPOINT=... ,"
+	@echo "                                     POLL_INTERVAL=... (default 3), POLL_TIMEOUT=... (default 90)"
+	@echo ""
 	@echo "Set CCKP_SPARQL_ENDPOINT before a *-sparql-*-stack deploy (sql stacks need no token)."
 	@echo "Optional: AWS_PROFILE, AWS_REGION, FOUNDATION_MODEL_ID, S3_BUCKET,"
 	@echo "          SQL_STACK_NAME_DEV/PROD, SQL_AGENT_NAME_DEV/PROD, SQL_LAMBDA_FN_DEV/PROD,"
@@ -97,6 +134,13 @@ help:
 
 check-aws:
 	$(AWS) sts get-caller-identity
+
+sparql-test:
+	@SPARQL_ENDPOINT="$(SPARQL_TEST_ENDPOINT)" \
+	 SPARQL_QUERY="$(QUERY)" \
+	 POLL_INTERVAL="$(POLL_INTERVAL)" \
+	 POLL_TIMEOUT="$(POLL_TIMEOUT)" \
+	 python3 scripts/sparql_test_query.py
 
 # ---------------------------------------------------------------------------
 # SQL variant
