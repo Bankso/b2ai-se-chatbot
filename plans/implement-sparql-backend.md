@@ -117,11 +117,61 @@ the plan as written, the other simplifies a design decision already made:**
    other portals. There is no query-layer auto-resolution yet (the doc
    describes that as a proposed, unimplemented future feature) — callers are
    currently responsible for scoping by hand.
-   - **Unresolved unknown, must confirm during implementation**: whether CCKP
-     is currently loaded as a single unversioned graph or already follows the
-     `urn:sagebrain:cckp:{date}` dated-snapshot convention. Check with
-     `SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } } ORDER BY DESC(?g)`
-     and look for `cckp` entries before finalizing the scoping approach.
+   - **Resolved via research (high confidence, pending final live
+     confirmation): CCKP does follow the dated-snapshot convention.**
+     `mc2-center/data-models`'s `kg-pipeline` (PR #264, "Add
+     Synapse-canonical IRIs, Biolink dual-typing, and a SageBrain S3 upload
+     pipeline") publishes `schema/*.ttl` and the merged `cckp_kg_full.ttl` to
+     the SageBrain Neptune S3 bucket under a **portal-scoped,
+     date-partitioned prefix**, with `manifest.ttl` uploaded last as the
+     completion sentinel that triggers Neptune's bulk load — this is the
+     same mechanism `Sage-Bionetworks-IT/sagebrain-infra` documents for
+     every portal (named graph URIs following `urn:sagebrain:{portal}:...`,
+     confirmed independently for `reactome:v97`-style release-tagged
+     sources; a `sagebrain-infra` issue titled "Remove stale data from
+     Neptune DefaultNamedGraph (superseded by named snapshot graphs)"
+     corroborates that the whole platform is moving away from an unscoped
+     default graph specifically because of this pattern). So CCKP is not a
+     hypothetical future risk here — it publishes through the identical
+     dated-snapshot pipeline as NF/ALS/Reactome, today. The one thing this
+     research couldn't confirm is the *exact* portal token used in CCKP's
+     own graph URI (`cckp` is the assumption throughout this plan, matching
+     every other reference to CCKP in this codebase, but wasn't visible in
+     the public PR/issue text) — **still needs the live enumerate-graphs
+     query below to confirm the exact string before finalizing
+     `_resolve_cckp_graph()`'s filter.**
+   - **Blocked in this session, needs the user to run it**: attempted this
+     query live against `https://vyar2xyj0k.execute-api.us-east-1.amazonaws.com/prod/query`
+     using the Synapse PAT in `~/.synapseConfig` — every attempt (from this
+     sandboxed session's network) got a **401 `AccessDeniedException`,
+     `"User is not authorized to access this resource with an explicit deny
+     in an identity-based policy"`**, consistently, including on a trivial
+     `SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }` smoke query. This is not
+     the vendor doc's documented "invalid/non-team token → plain 401" shape
+     — the specific "explicit deny in an identity-based policy" wording and
+     the request passing through a CloudFront distribution in front of API
+     Gateway both point to a network/resource-policy restriction (e.g. a
+     source-IP or VPC condition on the API Gateway resource policy or its
+     Lambda authorizer) rather than a token problem — consistent with this
+     session's sandboxed egress not originating from wherever the endpoint
+     allow-lists. Since the user's own earlier smoke testing against this
+     same endpoint (this plan's own Context, item 1–2) evidently worked from
+     their machine, run this from there instead:
+     ```bash
+     API=https://vyar2xyj0k.execute-api.us-east-1.amazonaws.com/prod/query
+     PAT=$(awk -F'= *' '/^authtoken/{print $2}' ~/.synapseConfig)
+     JOB=$(curl -s -X POST "$API" -H "Content-Type: application/json" \
+       -H "Authorization: Bearer $PAT" \
+       -d '{"query": "SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } } ORDER BY DESC(?g)"}' \
+       | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+     sleep 3
+     curl -s -H "Authorization: Bearer $PAT" "$API/$JOB"
+     ```
+     Look for `urn:sagebrain:cckp:*` entries in the returned bindings (or
+     whatever the real portal token turns out to be) and update
+     `_resolve_cckp_graph()`'s filter string accordingly before implementing
+     it — this is the one piece of the plan that genuinely can't be
+     finalized without that live result.
    - **Design implication for `lambda_function.py`**: add a small
      graph-resolution step — enumerate named graphs, pick the
      lexicographically-latest one matching the CCKP prefix — and wrap every
@@ -422,13 +472,45 @@ Rewrite to reach parity with `cloudformation.sql.yaml`'s structure:
   e.g. `Timeout: 90` and `LAMBDA_TIMEOUT: "90"` (giving `SPARQL_TIMEOUT`
   ~85s). The template currently copies the SQL variant's `Timeout: 30`
   verbatim (`cloudformation.sparql.yaml:196,204`), which was never re-derived
-  for this backend's actual dependency latency. Confirm during
-  implementation whether Bedrock's own action-group invocation wait imposes
-  any shorter ceiling of its own; nothing in the current template suggests
-  one, but verify against current AWS documentation before finalizing the
-  number rather than assuming 90s is actually usable. `UrlBuilderFunction`
-  (pure local computation, no network call) keeps the existing `Timeout: 30`
-  — this only applies to the graph-querying Lambda.
+  for this backend's actual dependency latency. **Resolved via research**:
+  there is no Bedrock-service-side ceiling shorter than Lambda's own 15-minute
+  maximum that would cap this — Lambda invoked as a Bedrock action-group
+  executor is bound by its own configured `Timeout` only. The "InvokeAgent
+  has a 60-second timeout" claim that shows up when researching this is
+  **boto3's own generic client-side `read_timeout` default** (applies to
+  every boto3 service client, not something Bedrock Agents specifically
+  imposes) — fully overridable per-caller via
+  `Config(read_timeout=...)`. `UrlBuilderFunction` (pure local computation,
+  no network call) keeps the existing `Timeout: 30` — this only applies to
+  the graph-querying Lambda.
+  - **This makes raising the Lambda timeout a two-sided fix, not a one-line
+    CFN change**: it only helps if every caller of `invoke_agent` against
+    this backend *also* raises its own `read_timeout` past 60s, or the
+    client-side socket read simply drops the connection at 60s regardless of
+    whether the Lambda is still legitimately working. Concretely:
+    - This repo's own `benchmark/kb-routing/evaluate_kb_routing.py`,
+      `benchmark/redteam/evaluate_redteam.py`, and
+      `benchmark/resource-search/evaluate_resource_search.py` all construct
+      `boto3.Session(...).client("bedrock-agent-runtime")` with no `Config`
+      override today — meaning a legitimately-slow SPARQL query (up to the
+      new ~85s budget) would surface as a client-side `ReadTimeoutError` in
+      any of these evals once the SPARQL variant is actually tested, not as
+      a real agent failure. Add `--read-timeout` (default matching the
+      client's normal 60s, overridable) to each script's `boto3.Session(...)`
+      → `Config(read_timeout=...)` construction before evaluating the SPARQL
+      variant with these tools — a small, mechanical change once identified,
+      but a real gap if missed (a false "the SPARQL backend is broken/slow"
+      reading that's actually just the eval harness's own client timing out
+      first).
+    - **The production CCKP chat frontend's own timeout configuration is
+      outside this repo and this plan's control** — it's a separate system
+      (the portal's own chat UI, not part of `cckp-chatbot`) whose HTTP/SDK
+      client timeout this plan has no visibility into. Flag this explicitly
+      to whoever owns that frontend before this backend ships: a raised
+      Lambda timeout accomplishes nothing in production if the frontend's
+      own request timeout is still ~60s or shorter. This is a real
+      cross-system dependency for the timeout fix to actually work
+      end-to-end, not something this plan can verify or fix by itself.
 - **Parameters**: `SparqlEndpoint` default → the real URL above (matching how
   NF-OSI's template hardcodes its own real endpoint as the default). Keep
   `SparqlAuthToken` (`NoEcho`) — drop the `SparqlApiKey` parameter, no longer
@@ -598,19 +680,58 @@ Add an `Unreleased` bullet under `cckp-copilot` documenting the new hybrid
 SPARQL+SQL-URL-builder backend and the async job-poll protocol, matching the
 file's existing terse style.
 
+### 6. Benchmark evaluator scripts — required companion to the timeout raise
+Per finding #8's `read_timeout` discovery: add a `--read-timeout` CLI flag
+(default 60, matching today's implicit boto3 default) to
+`benchmark/kb-routing/evaluate_kb_routing.py`,
+`benchmark/redteam/evaluate_redteam.py`, and
+`benchmark/resource-search/evaluate_resource_search.py`, threaded into each
+script's `boto3.Session(...).client("bedrock-agent-runtime")` construction
+via `config=Config(read_timeout=args.read_timeout)`. Without this, running
+any of these evals against a SPARQL-backed agent will misreport a
+legitimately-slow-but-successful query as a client-side timeout error once
+the Lambda's own timeout is raised past 60s. Low priority relative to
+sections 1–5 (only matters once the SPARQL variant is actually evaluated),
+but cheap and mechanical — worth doing in the same pass rather than
+rediscovering it later as a confusing false failure.
+
 ## Verification
 
 1. **Schema completion** (next step, before finalizing Instruction text):
    pull real property lists for `Publication`/`Tool`/`Grant`/
    `EducationalResource` the same way Dataset's was confirmed, using the
    user's PAT one more time, transiently (never written to a repo file).
+   **Blocked in this session, same as the graph-enumeration query above**:
+   this session's attempts to reach the live endpoint (using the PAT in
+   `~/.synapseConfig`, never printed or logged) all got the same 401
+   `AccessDeniedException` regardless of query content — a network/
+   resource-policy restriction on this sandbox's egress, not a token
+   problem. Run from the user's own machine, one `getShape`-shaped query per
+   remaining class (`Publication`, `Tool`, `Grant`, `EducationalResource`),
+   e.g.:
+   ```bash
+   API=https://vyar2xyj0k.execute-api.us-east-1.amazonaws.com/prod/query
+   PAT=$(awk -F'= *' '/^authtoken/{print $2}' ~/.synapseConfig)
+   JOB=$(curl -s -X POST "$API" -H "Content-Type: application/json" \
+     -H "Authorization: Bearer $PAT" \
+     -d '{"query": "SELECT ?p (COUNT(*) AS ?n) WHERE { GRAPH <RESOLVED-CCKP-GRAPH-URI> { ?s a cckp:Publication ; ?p ?o } } GROUP BY ?p ORDER BY DESC(?n)"}' \
+     | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+   sleep 3
+   curl -s -H "Authorization: Bearer $PAT" "$API/$JOB"
+   ```
+   substituting the resolved graph URI from the enumerate-graphs query
+   above, and `Tool`/`Grant`/`EducationalResource` for `Publication` on
+   repeat runs.
 2. **Unit tests**: `cd agents/cckp-copilot/lambda/cckpGraphRag && pytest` —
    the suite needs real rewriting (see above), not just a pass/fail check,
    since the request/response contract changed.
 3. **One end-to-end authenticated smoke call** after the Lambda rewrite: run
    the new `sparql_request()`/`count_by_type()` locally (not deployed) against
    the live endpoint with the user's PAT to confirm the rewritten poll-and-parse
-   logic actually works before it's wrapped in CloudFormation.
+   logic actually works before it's wrapped in CloudFormation. **Also needs
+   the user's own machine/network** per the same blocker — this session
+   cannot reach the live endpoint at all to pre-validate anything beyond
+   what's already reflected in this plan.
 4. **YAML sanity**: parse `cloudformation.sparql.yaml` with PyYAML (same
    throwaway check used for the last CFN edit).
 5. **No live AWS deploy in this session** — `aws cloudformation deploy`
@@ -625,4 +746,11 @@ file's existing terse style.
    for the actual deployed agent's `SparqlAuthToken`. Note per the doc:
    token validations are cached for 5 minutes per token, so a revoked/rotated
    token can still succeed for up to 5 minutes after the change — expected
-   lag, not a sign the rotation didn't take.
+   lag, not a sign the rotation didn't take. Separately: this session also
+   read the PAT from `~/.synapseConfig` (extracted into a shell variable,
+   never printed or echoed into the visible transcript) to attempt the
+   live queries above — every attempt was rejected by AWS before reaching
+   SageBrain's own auth logic (see the blockers above), so this specific
+   attempt never actually authenticated, but the token did leave the
+   sandbox as an `Authorization` header on each rejected request, which is
+   worth knowing about even though it's the token's normal intended use.
