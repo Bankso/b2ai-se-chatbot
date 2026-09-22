@@ -85,15 +85,17 @@ the old template and in `cckpGraphRag/lambda_function.py`:**
      convention in example queries): every `sparqlQuery` call must type-anchor
      to a `cckp:` class, because this is a shared multi-portal graph.
 
-3. **Response shape decision (my recommendation, flagged for review rather
-   than decided silently):** since the real endpoint hands back structured
+3. **Response shape decision:** since the real endpoint hands back structured
    SPARQL-JSON bindings (not TSV), switch the Lambda's return shape from the
    current `{"resultTsv": "..."}` to a parsed `{"headers": [...], "rows":
    [...], "count": N}` shape — mirroring the SQL Lambda's existing
    `QueryResultResponse` convention (`cloudformation.sql.yaml`'s
    `QueryResultResponse` schema) — instead of re-serializing JSON bindings
-   into TSV text just to match the old contract. Cleaner and more consistent
-   with the rest of the repo; can keep `resultTsv` instead if preferred.
+   into TSV text just to match the old contract. **No fallback to the old
+   `resultTsv` shape**: this backend has never been deployed, so there is no
+   real consumer of that contract to preserve — keeping it as an option
+   would be a backwards-compatibility shim for a compatibility need that
+   doesn't exist. Commit to the new shape outright.
 
 **A vendor doc ("Querying SageBrain", the team's official reference) surfaced
 two more findings after the above was drafted — one is a correctness gap in
@@ -241,6 +243,59 @@ the plan as written, the other simplifies a design decision already made:**
      /query/{job_id}` — `/ask` is out of scope for this plan entirely, not
      just deprioritized.
 
+8. **Plan review, no-workaround lens: two mitigations below were written as
+   Instruction-text/hope-based nudges where the sibling SQL Lambda already
+   has a real, code-level canonical fix for the same class of risk.**
+   - **Result-size overflow (finding #7's `LIMIT` note) needs server-side
+     enforcement, not just an Instruction telling the agent to remember
+     it.** `agents/cckp-copilot/lambda/cckpSqlRag/lambda_function.py`
+     doesn't rely on the agent remembering a `limit` param either — it
+     hard-clamps every query server-side via `_clamp_limit()`/`MAX_LIMIT =
+     200` (`lambda_function.py:50-51,290-295`), regardless of what the agent
+     requests. The current plan's only mitigation for the SPARQL side's
+     equivalent risk (an unbounded `SELECT` over `cckp:Dataset`/
+     `cckp:Publication` failing past ~400KB) is prompt-engineering — asking
+     the agent nicely to add `LIMIT` itself. That's a compliance-dependent
+     workaround for a risk the sibling backend already solves in code. Fix:
+     add a shared `_ensure_limit(query: str, default_limit: int) -> str`
+     helper — regex-check for an existing `LIMIT` clause (SPARQL's `LIMIT n`
+     is a simple trailing clause, unlike SQL's `partMask`-based limit, so
+     this means light query-text handling, not a request param) and append
+     a default if absent — and run **every** query this Lambda ever submits
+     to SageBrain through it: the agent-supplied `sparqlQuery` query text
+     *and* the internally-built queries in `get_schema()`/`count_by_type()`.
+     The Instruction-text guidance can still exist on top of this (teaching
+     the agent to pick a *sensible* `LIMIT` for relevance, not just avoid a
+     crash) but must not be the only thing standing between the agent and
+     the failure mode.
+   - **The Lambda timeout ceiling should match the documented dependency
+     SLA, not be worked around by asking for narrower queries.** Finding
+     #6 correctly identifies that this Lambda's poll budget (`SPARQL_TIMEOUT`,
+     ~25s, derived from `LAMBDA_TIMEOUT=30`) is shorter than the vendor
+     doc's documented worst-case execution ceiling (60s in the SageBrain
+     worker) — but the plan's response to that is "keep example/
+     agent-generated queries narrow," i.e. hope the mismatch is never hit,
+     rather than closing it. `cloudformation.sparql.yaml:196,204`
+     (`Timeout: 30` / `LAMBDA_TIMEOUT: "30"`) simply copies the SQL
+     variant's value verbatim — reasonable for the SQL Lambda (a
+     synchronous Synapse table-query call with a much shorter real-world
+     latency), but never re-derived for this backend's actual dependency,
+     whose vendor doc explicitly documents a 60s worst case specifically
+     *because* it built an async job-poll design so real work isn't bound by
+     a synchronous API's short limit (the doc's own stated reason for the
+     29-second constraint that forced the async design is API Gateway's own
+     hard ceiling on *SageBrain's* synchronous endpoint — a constraint this
+     Lambda's own Bedrock-invoked, async-polling design was never subject to
+     in the first place). Canonical fix: raise `Timeout`/`LAMBDA_TIMEOUT` to
+     comfortably exceed 60s (e.g. 75–90s, giving `SPARQL_TIMEOUT` ~70–85s)
+     so the full documented protocol space is actually supported, rather
+     than leaving the ceiling at 30s and mitigating with instruction text.
+     Confirm during implementation whether Bedrock's own action-group
+     invocation wait has any shorter ceiling of its own that would cap this
+     regardless — nothing in the current template suggests one, but this
+     should be verified against AWS's current Bedrock Agents documentation
+     rather than assumed, before picking a final number.
+
 Decisions already made with the user:
 1. **Hybrid agent.** The graph Lambda has no equivalent of the SQL Lambda's
    `buildExploreUrl` (the portal only accepts filters via a gzip+base64 `qw0`
@@ -330,6 +385,23 @@ Decisions already made with the user:
 - Spot-check `get_shape()` against a real class during implementation (should
   already be correctly scoped via `sh:targetClass`; confirm it also gets the
   `GRAPH` wrapper, don't assume).
+- **New: add a shared `_ensure_limit(query: str, default_limit: int = 200) ->
+  str` helper and run every submitted query through it (see finding #8) —
+  code-level enforcement, not just an Instruction-text reminder.** Regex-check
+  for an existing `LIMIT` clause (case-insensitive, e.g.
+  `re.search(r"\bLIMIT\s+\d+\b", query, re.IGNORECASE)`) and append
+  `f"LIMIT {default_limit}"` if absent. Apply it to `sparql_query()`'s
+  agent-supplied query text *and* to the internally-built queries in
+  `get_schema()`/`count_by_type()` — one shared enforcement point for every
+  query this Lambda ever submits to SageBrain, mirroring
+  `cckpSqlRag/lambda_function.py`'s existing `_clamp_limit()`/`MAX_LIMIT`
+  pattern (`lambda_function.py:50-51,290-295`), which already hard-caps the
+  SQL side's equivalent risk in code rather than relying on the agent
+  remembering a param. The Instruction-text `LIMIT` guidance from finding #7
+  is still worth keeping on top of this (teaches the agent to pick a
+  *sensible* limit for relevance, not just avoid a crash), but this code-level
+  cap is what actually prevents the >400KB failure mode regardless of what
+  the agent does or forgets to do.
 - Send `X-Source: cckp-copilot` on every request (submit and poll) — costs
   nothing and makes this Lambda's traffic identifiable in SageBrain's audit
   log.
@@ -345,6 +417,18 @@ Rewrite to reach parity with `cloudformation.sql.yaml`'s structure:
 - **Header comment**: drop the "NOT deployable yet" warning; describe the
   async job-poll protocol, the shared multi-portal graph, and the hybrid
   two-Lambda/two-action-group shape.
+- **`GraphRagFunction`'s `Timeout`/`LAMBDA_TIMEOUT` (see finding #8): raise
+  from `30` to comfortably exceed SageBrain's documented 60s worst case** —
+  e.g. `Timeout: 90` and `LAMBDA_TIMEOUT: "90"` (giving `SPARQL_TIMEOUT`
+  ~85s). The template currently copies the SQL variant's `Timeout: 30`
+  verbatim (`cloudformation.sparql.yaml:196,204`), which was never re-derived
+  for this backend's actual dependency latency. Confirm during
+  implementation whether Bedrock's own action-group invocation wait imposes
+  any shorter ceiling of its own; nothing in the current template suggests
+  one, but verify against current AWS documentation before finalizing the
+  number rather than assuming 90s is actually usable. `UrlBuilderFunction`
+  (pure local computation, no network call) keeps the existing `Timeout: 30`
+  — this only applies to the graph-querying Lambda.
 - **Parameters**: `SparqlEndpoint` default → the real URL above (matching how
   NF-OSI's template hardcodes its own real endpoint as the default). Keep
   `SparqlAuthToken` (`NoEcho`) — drop the `SparqlApiKey` parameter, no longer
