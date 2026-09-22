@@ -117,61 +117,43 @@ the plan as written, the other simplifies a design decision already made:**
    other portals. There is no query-layer auto-resolution yet (the doc
    describes that as a proposed, unimplemented future feature) — callers are
    currently responsible for scoping by hand.
-   - **Resolved via research (high confidence, pending final live
-     confirmation): CCKP does follow the dated-snapshot convention.**
-     `mc2-center/data-models`'s `kg-pipeline` (PR #264, "Add
-     Synapse-canonical IRIs, Biolink dual-typing, and a SageBrain S3 upload
-     pipeline") publishes `schema/*.ttl` and the merged `cckp_kg_full.ttl` to
-     the SageBrain Neptune S3 bucket under a **portal-scoped,
-     date-partitioned prefix**, with `manifest.ttl` uploaded last as the
-     completion sentinel that triggers Neptune's bulk load — this is the
-     same mechanism `Sage-Bionetworks-IT/sagebrain-infra` documents for
-     every portal (named graph URIs following `urn:sagebrain:{portal}:...`,
-     confirmed independently for `reactome:v97`-style release-tagged
-     sources; a `sagebrain-infra` issue titled "Remove stale data from
-     Neptune DefaultNamedGraph (superseded by named snapshot graphs)"
-     corroborates that the whole platform is moving away from an unscoped
-     default graph specifically because of this pattern). So CCKP is not a
-     hypothetical future risk here — it publishes through the identical
-     dated-snapshot pipeline as NF/ALS/Reactome, today. The one thing this
-     research couldn't confirm is the *exact* portal token used in CCKP's
-     own graph URI (`cckp` is the assumption throughout this plan, matching
-     every other reference to CCKP in this codebase, but wasn't visible in
-     the public PR/issue text) — **still needs the live enumerate-graphs
-     query below to confirm the exact string before finalizing
-     `_resolve_cckp_graph()`'s filter.**
-   - **Blocked in this session, needs the user to run it**: attempted this
-     query live against `https://vyar2xyj0k.execute-api.us-east-1.amazonaws.com/prod/query`
-     using the Synapse PAT in `~/.synapseConfig` — every attempt (from this
-     sandboxed session's network) got a **401 `AccessDeniedException`,
-     `"User is not authorized to access this resource with an explicit deny
-     in an identity-based policy"`**, consistently, including on a trivial
-     `SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }` smoke query. This is not
-     the vendor doc's documented "invalid/non-team token → plain 401" shape
-     — the specific "explicit deny in an identity-based policy" wording and
-     the request passing through a CloudFront distribution in front of API
-     Gateway both point to a network/resource-policy restriction (e.g. a
-     source-IP or VPC condition on the API Gateway resource policy or its
-     Lambda authorizer) rather than a token problem — consistent with this
-     session's sandboxed egress not originating from wherever the endpoint
-     allow-lists. Since the user's own earlier smoke testing against this
-     same endpoint (this plan's own Context, item 1–2) evidently worked from
-     their machine, run this from there instead:
-     ```bash
-     API=https://vyar2xyj0k.execute-api.us-east-1.amazonaws.com/prod/query
-     PAT=$(awk -F'= *' '/^authtoken/{print $2}' ~/.synapseConfig)
-     JOB=$(curl -s -X POST "$API" -H "Content-Type: application/json" \
-       -H "Authorization: Bearer $PAT" \
-       -d '{"query": "SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } } ORDER BY DESC(?g)"}' \
-       | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
-     sleep 3
-     curl -s -H "Authorization: Bearer $PAT" "$API/$JOB"
+   - **Confirmed live (2026-09-22, via `make sparql-test` run from the
+     user's own machine — this session's own sandbox was network-blocked
+     from reaching the endpoint, see git history for that dead end).** The
+     enumerate-graphs query returned exactly six named graphs:
      ```
-     Look for `urn:sagebrain:cckp:*` entries in the returned bindings (or
-     whatever the real portal token turns out to be) and update
-     `_resolve_cckp_graph()`'s filter string accordingly before implementing
-     it — this is the one piece of the plan that genuinely can't be
-     finalized without that live result.
+     urn:sagebrain:reactome:2026-09-22
+     urn:sagebrain:nf:2026-09-20
+     urn:sagebrain:nf:2026-09-14
+     urn:sagebrain:cckp:2026-09-15
+     urn:sagebrain:als:2026-09-15
+     http://aws.amazon.com/neptune/vocab/v01/DefaultNamedGraph
+     ```
+     This resolves everything finding #4 needed:
+     - **The portal token is confirmed `cckp`** — `_resolve_cckp_graph()`
+       should filter for the literal prefix `urn:sagebrain:cckp:`.
+     - **Exactly one CCKP snapshot exists today**: `urn:sagebrain:cckp:2026-09-15`.
+       So `_resolve_cckp_graph()` has nothing to disambiguate yet — but see
+       the next point for why the resolver still needs to be built as if it
+       did.
+     - **NF already has two snapshots live right now** (`2026-09-20` and
+       `2026-09-14`) — this is no longer a hypothetical "if CCKP is ever
+       re-published" risk description; the exact failure mode finding #4
+       warns about is observably already happening for a sibling portal on
+       this same shared store, today. An unscoped `?x a cckp:Dataset` query
+       would currently still be correct for CCKP specifically (only one
+       snapshot exists), but the equivalent unscoped query for NF's own
+       classes would already be double-counting across its two live
+       snapshots — strong, concrete confirmation that this finding was
+       never speculative and that CCKP will hit the identical problem the
+       moment it re-publishes.
+     - **`http://aws.amazon.com/neptune/vocab/v01/DefaultNamedGraph` is a
+       real entry that must NOT match the CCKP filter** — a plain
+       Neptune-internal default graph (matches the `sagebrain-infra` issue
+       found via research about deprecating/superseding this default graph
+       with named snapshot graphs). A simple string-prefix filter on
+       `urn:sagebrain:cckp:` naturally excludes it; a looser substring/regex
+       filter might not — worth a unit test case specifically for this.
    - **Design implication for `lambda_function.py`**: add a small
      graph-resolution step — enumerate named graphs, pick the
      lexicographically-latest one matching the CCKP prefix — and wrap every
@@ -421,10 +403,16 @@ Decisions already made with the user:
   query — `sparqlQuery`, `count_by_type()`, `get_schema()`, `get_shape()` —
   in `GRAPH <resolved-uri> { ... }` (or `FROM <resolved-uri>` where a single
   compartment is being read) instead of relying on `cckp:` filtering by
-  itself. **Before writing this**, confirm with the enumerate-graphs query
-  whether CCKP is actually published as dated snapshots yet
-  (`urn:sagebrain:cckp:{date}`) or still lives in one undated graph — the
-  helper's filter/sort logic depends on which is true.
+  itself. **Confirmed live (2026-09-22, see finding #4)**: CCKP is published
+  as a dated snapshot, `urn:sagebrain:cckp:2026-09-15` today — filter on the
+  literal prefix `urn:sagebrain:cckp:` (this also naturally excludes the
+  real `http://aws.amazon.com/neptune/vocab/v01/DefaultNamedGraph` entry
+  confirmed to exist alongside it; a looser substring match might not, so
+  test that case explicitly). Only one snapshot exists right now, but NF
+  already has two live (`urn:sagebrain:nf:2026-09-20` and `-09-14`) — build
+  the lexicographically-latest-wins resolution logic for real, not as a
+  single-graph special case, since CCKP will follow the same pattern the
+  moment it re-publishes.
 - Rewrite `count_by_type()` to explicitly enumerate the 5 `cckp:` classes
   (`Dataset`, `Publication`, `Tool`, `Grant`, `EducationalResource`) rather
   than an unscoped `?s a ?type`, and to run inside the resolved `GRAPH` block
@@ -700,38 +688,28 @@ rediscovering it later as a confusing false failure.
 1. **Schema completion** (next step, before finalizing Instruction text):
    pull real property lists for `Publication`/`Tool`/`Grant`/
    `EducationalResource` the same way Dataset's was confirmed, using the
-   user's PAT one more time, transiently (never written to a repo file).
-   **Blocked in this session, same as the graph-enumeration query above**:
-   this session's attempts to reach the live endpoint (using the PAT in
-   `~/.synapseConfig`, never printed or logged) all got the same 401
-   `AccessDeniedException` regardless of query content — a network/
-   resource-policy restriction on this sandbox's egress, not a token
-   problem. Run from the user's own machine, one `getShape`-shaped query per
-   remaining class (`Publication`, `Tool`, `Grant`, `EducationalResource`),
-   e.g.:
+   user's PAT one more time, transiently (never written to a repo file). The
+   graph-enumeration query confirmed the live CCKP graph is
+   `urn:sagebrain:cckp:2026-09-15` (2026-09-22) — will need re-checking for
+   drift if a second CCKP snapshot lands before this step runs. Use
+   `make sparql-test` (this repo's own network access to the endpoint is
+   confirmed working from the user's machine now — see finding #4), one
+   `getShape`-shaped query per remaining class:
    ```bash
-   API=https://vyar2xyj0k.execute-api.us-east-1.amazonaws.com/prod/query
-   PAT=$(awk -F'= *' '/^authtoken/{print $2}' ~/.synapseConfig)
-   JOB=$(curl -s -X POST "$API" -H "Content-Type: application/json" \
-     -H "Authorization: Bearer $PAT" \
-     -d '{"query": "SELECT ?p (COUNT(*) AS ?n) WHERE { GRAPH <RESOLVED-CCKP-GRAPH-URI> { ?s a cckp:Publication ; ?p ?o } } GROUP BY ?p ORDER BY DESC(?n)"}' \
-     | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
-   sleep 3
-   curl -s -H "Authorization: Bearer $PAT" "$API/$JOB"
+   make sparql-test QUERY='SELECT ?p (COUNT(*) AS ?n) WHERE { GRAPH <urn:sagebrain:cckp:2026-09-15> { ?s a cckp:Publication ; ?p ?o } } GROUP BY ?p ORDER BY DESC(?n)'
    ```
-   substituting the resolved graph URI from the enumerate-graphs query
-   above, and `Tool`/`Grant`/`EducationalResource` for `Publication` on
-   repeat runs.
+   substituting `Tool`/`Grant`/`EducationalResource` for `Publication` on
+   repeat runs (and the current graph URI, if it's changed by then).
 2. **Unit tests**: `cd agents/cckp-copilot/lambda/cckpGraphRag && pytest` —
    the suite needs real rewriting (see above), not just a pass/fail check,
    since the request/response contract changed.
 3. **One end-to-end authenticated smoke call** after the Lambda rewrite: run
    the new `sparql_request()`/`count_by_type()` locally (not deployed) against
    the live endpoint with the user's PAT to confirm the rewritten poll-and-parse
-   logic actually works before it's wrapped in CloudFormation. **Also needs
-   the user's own machine/network** per the same blocker — this session
-   cannot reach the live endpoint at all to pre-validate anything beyond
-   what's already reflected in this plan.
+   logic actually works before it's wrapped in CloudFormation. `make
+   sparql-test` (with `QUERY=` overridden to the real rewritten call's
+   query shape) is the fastest way to check this by hand before wiring it
+   into the Lambda proper.
 4. **YAML sanity**: parse `cloudformation.sparql.yaml` with PyYAML (same
    throwaway check used for the last CFN edit).
 5. **No live AWS deploy in this session** — `aws cloudformation deploy`
