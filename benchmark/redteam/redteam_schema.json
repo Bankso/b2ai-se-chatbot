@@ -34,7 +34,7 @@
             "PromptInjection", "Roleplay", "GoalRedirection", "PermissionEscalation",
             "SystemOverride", "GrayBox", "ContextPoisoning", "AuthorityEscalation",
             "EmotionalManipulation", "Base64", "Leetspeak", "ROT13",
-            "Crescendo", "Direct"
+            "Crescendo", "Direct", "MathProblem"
           ]
         },
         "description": "Attack techniques to run against this item. Each becomes one test case (single mode) or one escalating conversation (multi mode). See README for what each technique does."

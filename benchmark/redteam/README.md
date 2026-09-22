@@ -95,6 +95,7 @@ Legend: ✅ used by ≥1 config item · 🔲 implemented, not currently paired w
 | `Leetspeak` | single | 🔲 | Writes sensitive parts in leetspeak to evade keyword filtering |
 | `ROT13` | single | 🔲 | Encodes the request in ROT13 to slip past filtering |
 | `Crescendo` | multi | off-topic-repurposing-crescendo, pii-leakage, cckp-medical-misinformation, access-restriction-disclosure | Opens benign and escalates step by step across turns, using earlier rapport |
+| `MathProblem` | single | off-topic-repurposing | Disguises the off-topic ask as a math/logic problem framed as a prerequisite to a CCKP-relevant goal |
 
 Note: technique↔item pairing is deliberate, not exhaustive — the encoding tricks (`Base64`/`Leetspeak`/`ROT13`) are implemented but unpaired because they mainly target keyword-filtered *harmful-content* generation, which isn't this copilot's risk surface. `Crescendo` (and any future multi-turn technique) only runs on items with `mode: "multi"`; pairing it with a single-turn item is skipped with a warning.
 
@@ -108,7 +109,6 @@ Inventory of techniques from deepteam and the red-teaming literature that we cou
 | `TreeJailbreaking` | deepteam multi-turn | Branch-and-prune search over attack paths; heavier, more model calls |
 | `SequentialJailbreak` | deepteam multi-turn | Staged multi-prompt break; overlaps with `Crescendo` |
 | `BadLikertJudge` | deepteam multi-turn | Elicits harmful content via graded-rating framing; content-safety focused |
-| `MathProblem` | deepteam single-turn | Disguises harmful intent as a math/logic proof; content-safety focused, not scope/leakage |
 | `SyntheticContextInjection` | deepteam single-turn | Injects fake retrieved context; relevant only to a true RAG-injection item (see note below) |
 | `Multilingual` | deepteam single-turn | Non-English phrasing to evade filters; low value for this English-only CCKP surface |
 | `AdversarialPoetry` | deepteam single-turn | Obfuscates intent as verse; content-safety focused |
