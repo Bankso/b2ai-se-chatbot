@@ -187,18 +187,50 @@ the plan as written, the other simplifies a design decision already made:**
      per agent tool call unless the resolved graph URI is cached (e.g., per
      Lambda cold start, with a short TTL) — worth deciding explicitly rather
      than adding it ad hoc.
-   - **Residual risk, document rather than solve**: the doc's official
-     protocol also checks a DynamoDB ingestion-tracking table
-     (`app-dev-neptune-pipeline-loads`, in the `sagebrain-prod` AWS account)
-     to confirm a snapshot's load actually reached `status: complete` before
-     trusting it — a partially-failed load can leave a graph with partial
-     triples but no in-graph signal of that. `LambdaExecutionRole` in
-     `cloudformation.sparql.yaml` only has `AWSLambdaBasicExecutionRole` and
-     no cross-account access to that table (it lives in SageBrain's account,
-     not CCKP's), so this Lambda cannot replicate that check. Accept this as
-     a known limitation and say so plainly in the Instruction/README rather
-     than silently pretending the graph-enumeration step is equivalent to
-     the doc's full protocol.
+   - **Revised — likely solvable without DynamoDB access, via a real
+     in-graph provenance signal (found in `kg-pipeline`'s
+     `scripts/upload_sagebrain_s3.py`, same source as finding #9).** The
+     doc's official protocol checks a DynamoDB ingestion-tracking table
+     (`app-dev-neptune-pipeline-loads`, in the `sagebrain-prod` account) for
+     `status: complete` before trusting a snapshot — this Lambda genuinely
+     can't reach that table (`LambdaExecutionRole` has no cross-account
+     access, and it lives in SageBrain's account, not CCKP's). But
+     `upload_sagebrain_s3.py`'s own docstring says `data/_provenance.ttl` (a
+     `prov:Activity`/`prov:generatedAtTime`/`cckp:portal` triple identifying
+     the exact build that produced the snapshot) is uploaded **inside the
+     load path** (`data/_provenance.ttl`, distinct from `manifest.ttl`, the
+     trigger-only sentinel uploaded outside the load path) — meaning it gets
+     bulk-loaded into the *same named graph* as the actual data, and is
+     queryable via plain SPARQL. The real `_provenance.ttl` content fetched
+     from this same PR branch matches the live `urn:sagebrain:cckp:2026-09-15`
+     graph confirmed in finding #4 exactly (S3 path
+     `cckp/2026-09-15/`, `cckp:portal "cckp"`), strongly suggesting this
+     isn't just a branch-only aspiration but reflects what's actually in the
+     live graph today.
+     - **Design implication**: have `_resolve_cckp_graph()` (or a one-time
+       startup check) verify the resolved graph actually contains a
+       `prov:Activity` triple before trusting it, e.g.
+       `ASK { GRAPH <resolved-uri> { ?b a prov:Activity ; cckp:portal "cckp" } }`
+       — this isn't a perfect substitute for the DynamoDB table's
+       `status: complete` field (it confirms the load pipeline *ran and
+       reached the upload step*, not that every row parsed without error),
+       but it's a real, no-extra-infrastructure signal that's strictly
+       better than the "accept as unsolvable" framing this residual risk
+       previously had. **Confirm live** (this session still can't reach the
+       endpoint) before committing to this as the actual mitigation — the
+       PR is unmerged, so verify the triple's exact predicate/shape matches
+       what's really in the graph, not just what this branch's script
+       intends to produce.
+     - **Better fix upstream, worth raising with the `data-models` team
+       regardless of the above**: this same discovery is a genuine argument
+       for `kg-pipeline` to eventually publish a stable "current snapshot"
+       alias (a fixed graph name that always points at the latest complete
+       load) alongside the dated snapshot graphs — the vendor doc itself
+       describes exactly this kind of query-layer auto-resolution as a
+       "proposed, unimplemented future feature." That would remove the need
+       for `_resolve_cckp_graph()`'s enumerate-and-sort logic entirely, not
+       just make it safer. Not something to build into this plan now, but
+       worth flagging as the ideal long-term direction.
 
 5. **Auth: reuse the existing Synapse-token wiring instead of minting a new
    secret.** The doc confirms SageBrain's authorizer takes a Synapse PAT (or
@@ -416,7 +448,16 @@ the plan as written, the other simplifies a design decision already made:**
      properties, or (c) accept and clearly document that `getShape` only
      gives real constraint info for `Dataset`/`Grant` today, and say so in
      the Instruction rather than let the agent treat a silently-empty
-     result as "this class has no documented shape constraints."
+     result as "this class has no documented shape constraints." **(d), the
+     actual best fix: raise this with the `mc2-center/data-models` team as a
+     small addition to `cckp_portal.shacl.ttl`** — a `shape:PublicationShape`/
+     `shape:ToolShape`/`shape:EducationalResourceShape` mirroring the
+     existing `DatasetShape`/`GrantShape` pattern exactly (identifying-field
+     `sh:minCount`/`sh:maxCount`/`sh:datatype` shape with `sh:targetClass`)
+     closes this gap in the graph's own schema, which is more correct than
+     any client-side compensating logic in the Lambda — (b)/(c) above are
+     reasonable *fallbacks* if the schema fix isn't available in time, not a
+     substitute for it.
 
 Decisions already made with the user:
 1. **Hybrid agent.** The graph Lambda has no equivalent of the SQL Lambda's
