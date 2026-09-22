@@ -62,6 +62,31 @@ the old template and in `cckpGraphRag/lambda_function.py`:**
    layered on top (`creator`, `measurementTechnique`, `license`, `funder`,
    `keywords`, `citation`).
 
+   **`Publication`'s property list confirmed live (2026-09-22, via `make
+   sparql-test`)** — the same `+Term` pairing convention holds
+   (`assay`/`assayTerm`, `tumorType`/`tumorTypeTerm`, `tissue`/`tissueTerm`,
+   `accessibility`/`accessibilityTerm`), plus `theme`, `dataType`,
+   `grantNumber`(+`Name`,+`Ref`), `consortium`(+`Ref`), `abstract`, `doi`
+   (+`Iri`), `journal`, `pubMedId`(+`IdIri`,+`Link`,+`Url`),
+   `publicationTitle`, `publicationYear`, `authors`, `keywords`. **One
+   finding that changes the linked-resources design**: there are two
+   distinct dataset-linking properties, not one —
+   `cckp:dataset` (present on 4,771 of 4,773 Publications — almost
+   certainly the same field the SQL variant's `publications.dataset` column
+   exposes, which is a literal string frequently just `"Not Applicable"`,
+   not a real link) versus **`cckp:datasetRef`** (present on only 394 of
+   4,773 — far closer to the SQL variant's own real linked-dataset rate,
+   and plausibly a proper object-property reference rather than a
+   free-text field). **Confirm which one actually resolves to a real
+   `cckp:Dataset` node** (spot-check a `datasetRef` value against a real
+   `Dataset` instance) before writing the SPARQL variant's linked-resources
+   example query — `datasetRef` is the more likely candidate for a
+   semantically real join, and defaulting the Instruction's example to the
+   wrong one of these two would silently reproduce the exact
+   "field looks like a link but usually isn't" trap the SQL variant's own
+   Instruction already had to spell out explicitly for `dataset`/
+   `datasetAlias` (`cloudformation.sql.yaml:328`).
+
    **Consequence:** every query this backend runs must type-anchor to a
    `cckp:` class (`?x a cckp:Dataset`, etc.) — the existing speculative
    example queries already did this by luck/convention, but it turns out to
@@ -687,28 +712,27 @@ rediscovering it later as a confusing false failure.
 
 1. **Schema completion** (next step, before finalizing Instruction text):
    pull real property lists for `Publication`/`Tool`/`Grant`/
-   `EducationalResource` the same way Dataset's was confirmed, using the
-   user's PAT one more time, transiently (never written to a repo file). The
+   `EducationalResource` the same way Dataset's was confirmed. The
    graph-enumeration query confirmed the live CCKP graph is
    `urn:sagebrain:cckp:2026-09-15` (2026-09-22) — will need re-checking for
-   drift if a second CCKP snapshot lands before this step runs. Use
-   `make sparql-test` (this repo's own network access to the endpoint is
-   confirmed working from the user's machine now — see finding #4), one
-   `getShape`-shaped query per remaining class:
+   drift if a second CCKP snapshot lands before this step finishes. Use
+   `make sparql-test` (confirmed working from the user's machine now — see
+   finding #4), one property-count query per remaining class:
    ```bash
-   make sparql-test QUERY='SELECT ?p (COUNT(*) AS ?n) WHERE { GRAPH <urn:sagebrain:cckp:2026-09-15> { ?s a cckp:Publication ; ?p ?o } } GROUP BY ?p ORDER BY DESC(?n)'
+   make sparql-test QUERY='SELECT ?p (COUNT(*) AS ?n) WHERE { GRAPH <urn:sagebrain:cckp:2026-09-15> { ?s a cckp:Tool ; ?p ?o } } GROUP BY ?p ORDER BY DESC(?n)'
    ```
-   (No `PREFIX cckp: ...` needed in `QUERY` — the first real run of this
-   command hit exactly that gap: `cckp:` was undefined, and Neptune
-   correctly 400'd it. `make sparql-test` now auto-prepends the real
-   deployed Lambda's own `DEFAULT_PREFIXES`
-   (`lambda/cckpGraphRag/lambda_function.py`), matching what
-   `sparql_query()`/`get_shape()` already do in production — this was a gap
-   in the standalone test script, not in the Lambda or this plan; the
-   existing (not-yet-rewritten) `sparql_query()` already calls
-   `sparql_request(query, include_default_prefixes=True)` correctly.)
-   substituting `Tool`/`Grant`/`EducationalResource` for `Publication` on
-   repeat runs (and the current graph URI, if it's changed by then).
+   substituting `Grant`/`EducationalResource` for `Tool` on repeat runs (and
+   the current graph URI, if it's changed by then). No `PREFIX cckp: ...`
+   needed — `make sparql-test` auto-prepends the real deployed Lambda's own
+   `DEFAULT_PREFIXES`.
+   - **`Publication` — done** (2026-09-22, see finding #2's addendum above):
+     confirmed real property list, and a genuinely important finding —
+     `cckp:dataset` vs. `cckp:datasetRef` are two different properties with
+     very different fill rates (4,771/4,773 vs. 394/4,773), and the smaller
+     one is the more likely real link. Needs a spot-check (does a
+     `datasetRef` value actually resolve to a real `cckp:Dataset` node?)
+     before finalizing the linked-resources example query.
+   - **`Tool`/`Grant`/`EducationalResource` — still open.**
 2. **Unit tests**: `cd agents/cckp-copilot/lambda/cckpGraphRag && pytest` —
    the suite needs real rewriting (see above), not just a pass/fail check,
    since the request/response contract changed.
