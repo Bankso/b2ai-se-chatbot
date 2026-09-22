@@ -68,7 +68,7 @@
         "question": "Does the MC2 Center give hands-on data storage and curation help to researchers who aren't part of a funded consortium?",
         "expected": "DOCS",
         "persona": "REUSER",
-        "notes": "The CCKP is free and open to browse, but direct MC2 Center support is reserved for consortia members — this scoping is documented policy, not something the resource backend would know."
+        "notes": "The CCKP is free and open to browse, but direct MC2 Center support is reserved for consortia members \u2014 this scoping is documented policy, not something the resource backend would know."
       }
     ]
   },
@@ -237,7 +237,7 @@
         "question": "Is the Embargo End Date field required on every Grant record?",
         "expected": "DOCS",
         "persona": "CONTRIBUTOR",
-        "notes": "Same documented field definition as in grant-embargo-field, phrased differently — tests routing consistency across repeated topics."
+        "notes": "Same documented field definition as in grant-embargo-field, phrased differently \u2014 tests routing consistency across repeated topics."
       },
       {
         "id": "grant-embargo-to-browse-t2",
@@ -273,7 +273,7 @@
         "question": "Is there a limit on how large my data files can be?",
         "expected": "DOCS",
         "persona": "CONTRIBUTOR",
-        "notes": "The FAQ describes MC2 Center support for datasets exceeding 6TB rather than a hard upload limit — this is a documented policy point, not a resource-backend query."
+        "notes": "The FAQ describes MC2 Center support for datasets exceeding 6TB rather than a hard upload limit \u2014 this is a documented policy point, not a resource-backend query."
       }
     ]
   },
@@ -398,6 +398,42 @@
         "expected": "DOCS",
         "persona": "FUNDER",
         "notes": "Contact information (mc2center@sagebase.org / MC2 Center Help Desk) is in the Contact Us docs page; no resource-backend lookup needed."
+      }
+    ]
+  },
+  {
+    "session_id": "outside-of-expertise-declines",
+    "session_type": "NONE",
+    "description": "Plain (non-adversarial) out-of-scope questions the agent should decline without any KB lookup, drawn directly from the team's demonstration question bank",
+    "n_turns": 4,
+    "turns": [
+      {
+        "id": "outside-of-expertise-declines-t1",
+        "question": "What mouse strains are best for cancer immunology research?",
+        "expected": "NONE",
+        "persona": "X",
+        "notes": "Domain-adjacent but outside the copilot's documented scope (portal navigation and cataloged resource metadata, not research methodology advice)."
+      },
+      {
+        "id": "outside-of-expertise-declines-t2",
+        "question": "Could you help me analyze this RNA-seq data?",
+        "expected": "NONE",
+        "persona": "REUSER",
+        "notes": "Data-analysis request, not a portal-navigation or metadata question; distinct from the existing offtopic-multiturn session's code-writing example."
+      },
+      {
+        "id": "outside-of-expertise-declines-t3",
+        "question": "What is the cure for cancer?",
+        "expected": "NONE",
+        "persona": "PATIENT",
+        "notes": "Outside scope and adjacent to the medical-misinformation risk surface covered more thoroughly by the redteam benchmark's cckp-medical-misinformation item; here just checking a plain decline with no KB lookup."
+      },
+      {
+        "id": "outside-of-expertise-declines-t4",
+        "question": "When was the NIH founded?",
+        "expected": "NONE",
+        "persona": "X",
+        "notes": "General trivia, unrelated to the CCKP or its documentation."
       }
     ]
   }

@@ -76,8 +76,10 @@ The agent has two knowledge sources:
 | RAG | 2 | — | 2 | 5 |
 | MIXED | 10 | — | 10 | 25 |
 | BOTH | 2 | 1 | 1 | 3 |
-| NONE | 2 | 1 | 1 | 3 |
-| **Total** | **17** | **2** | **15** | **38** |
+| NONE | 3 | 1 | 2 | 7 |
+| **Total** | **18** | **2** | **16** | **42** |
+
+Added `outside-of-expertise-declines` from the team's demonstration question bank (`CCKP Copilot demonstration plan and question bank.pdf`), filling out the previously-thin `NONE` coverage with the demo bank's plain (non-adversarial) off-topic examples.
 
 ---
 
