@@ -402,6 +402,84 @@
     ]
   },
   {
+    "session_id": "nci-site-visit-full-flow",
+    "session_type": "MIXED",
+    "description": "Full multi-turn flow adapted from the team's vetted NCI site-visit demo script: overview, contribution, keyword search, grouping, linked collection, result selection, tool recommendation, redirect, an access-restricted follow-up, and two off-topic declines",
+    "n_turns": 10,
+    "turns": [
+      {
+        "id": "nci-site-visit-full-flow-t1",
+        "question": "Give me an overview of the portal",
+        "expected": "DOCS",
+        "persona": "X",
+        "notes": "General portal orientation is documentation content."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t2",
+        "question": "How do I contribute data to the CCKP?",
+        "expected": "DOCS",
+        "persona": "CONTRIBUTOR",
+        "notes": "Contribution process is documentation content."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t3",
+        "question": "Show me publications about lymphatic involvement",
+        "expected": "RAG",
+        "persona": "REUSER",
+        "notes": "Keyword search over live Publication records requires the resource backend."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t4",
+        "question": "Group the results by research theme",
+        "expected": "RAG",
+        "persona": "REUSER",
+        "notes": "Reviewer judgment call: this could be answered by re-grouping the already-fetched result set client-side (arguably NONE/no new lookup) or by re-querying the backend with theme as a grouping dimension. Marked RAG since the agent has no persistent client-side result cache and typically re-derives groupings via another backend call; flag to BOTH if review finds either behavior acceptable."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t5",
+        "question": "Show me the collection of datasets associated with these publications",
+        "expected": "REDIRECT",
+        "persona": "REUSER",
+        "notes": "\"Show me the collection of X\" is the portal's redirect phrasing (Collection page via the encoded filter link), matching the existing grant-embargo-to-browse session's pattern."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t6",
+        "question": "Select GSE161422",
+        "expected": "RAG",
+        "persona": "REUSER",
+        "notes": "Follow-up selecting one specific record out of a previously shown collection requires a resource-backend lookup for that record's details."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t7",
+        "question": "What tools on the CCKP could help me analyze the dataset syn77066955?",
+        "expected": "RAG",
+        "persona": "REUSER",
+        "notes": "Reviewer judgment call: Tool is a first-class CCKP record type (cckp:Tool), so this is plausibly answerable by querying Tool records filtered by assay/data-type overlap with the named dataset. Flag to DOCS or BOTH on review if the agent is not expected to cross-reference dataset attributes to tool applicability."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t8",
+        "question": "Generate a link to the collection of human glioma ATAC-seq and RNA-seq datasets",
+        "expected": "REDIRECT",
+        "persona": "REUSER",
+        "notes": "Explicit link-generation request for a multi-filter collection."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t9",
+        "question": "Tell me about the H&E files in the DCIS upstaging publication dataset syn64713343",
+        "expected": "RAG",
+        "persona": "REUSER",
+        "notes": "Real example from the team's demo question bank: syn64713343's file-level info (H&E files) is behind a Synapse Access Requirement. The agent should still consult the resource backend (checkRestriction/getDatasetFiles) but must NOT disclose file-level details in its answer \u2014 this turn checks source routing only; see the redteam benchmark's `access-restriction-disclosure` item for the content-correctness half of this same scenario."
+      },
+      {
+        "id": "nci-site-visit-full-flow-t10",
+        "question": "What is the definition of an indefinite integral?",
+        "expected": "NONE",
+        "persona": "X",
+        "notes": "Off-topic math question, outside the copilot's scope; no KB lookup expected."
+      }
+    ]
+  },
+  {
     "session_id": "outside-of-expertise-declines",
     "session_type": "NONE",
     "description": "Plain (non-adversarial) out-of-scope questions the agent should decline without any KB lookup, drawn directly from the team's demonstration question bank",

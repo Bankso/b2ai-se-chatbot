@@ -74,12 +74,12 @@ The agent has two knowledge sources:
 |----------------|----------|-------------|------------|-------|
 | DOCS | 1 | — | 1 | 2 |
 | RAG | 2 | — | 2 | 5 |
-| MIXED | 10 | — | 10 | 25 |
+| MIXED | 11 | — | 11 | 35 |
 | BOTH | 2 | 1 | 1 | 3 |
 | NONE | 3 | 1 | 2 | 7 |
-| **Total** | **18** | **2** | **16** | **42** |
+| **Total** | **19** | **2** | **17** | **52** |
 
-Added `outside-of-expertise-declines` from the team's demonstration question bank (`CCKP Copilot demonstration plan and question bank.pdf`), filling out the previously-thin `NONE` coverage with the demo bank's plain (non-adversarial) off-topic examples.
+Also added `nci-site-visit-full-flow` from the same demo question bank: a 10-turn session adapted from the vetted NCI site-visit script (covers grouping, a linked-resource collection redirect, a select-a-specific-result follow-up, a tool-recommendation question, and the real access-restricted `syn64713343` example — see its per-turn `notes` for reviewer judgment calls).
 
 ---
 
