@@ -698,6 +698,15 @@ rediscovering it later as a confusing false failure.
    ```bash
    make sparql-test QUERY='SELECT ?p (COUNT(*) AS ?n) WHERE { GRAPH <urn:sagebrain:cckp:2026-09-15> { ?s a cckp:Publication ; ?p ?o } } GROUP BY ?p ORDER BY DESC(?n)'
    ```
+   (No `PREFIX cckp: ...` needed in `QUERY` — the first real run of this
+   command hit exactly that gap: `cckp:` was undefined, and Neptune
+   correctly 400'd it. `make sparql-test` now auto-prepends the real
+   deployed Lambda's own `DEFAULT_PREFIXES`
+   (`lambda/cckpGraphRag/lambda_function.py`), matching what
+   `sparql_query()`/`get_shape()` already do in production — this was a gap
+   in the standalone test script, not in the Lambda or this plan; the
+   existing (not-yet-rewritten) `sparql_query()` already calls
+   `sparql_request(query, include_default_prefixes=True)` correctly.)
    substituting `Tool`/`Grant`/`EducationalResource` for `Publication` on
    repeat runs (and the current graph URI, if it's changed by then).
 2. **Unit tests**: `cd agents/cckp-copilot/lambda/cckpGraphRag && pytest` —

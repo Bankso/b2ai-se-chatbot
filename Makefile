@@ -90,6 +90,12 @@ SPARQL_TEST_ENDPOINT ?= https://vyar2xyj0k.execute-api.us-east-1.amazonaws.com/p
 # entirely inside scripts/sparql_test_query.py instead — see its
 # resolve_pat(). Export SPARQL_PAT yourself before calling `make
 # sparql-test` if you want to override the file-based lookup.
+#
+# QUERY doesn't need its own PREFIX declarations for cckp:/rdfs:/etc. — the
+# script automatically prepends the real deployed Lambda's own
+# DEFAULT_PREFIXES (agents/cckp-copilot/lambda/cckpGraphRag/lambda_function.py),
+# the same prefixes every real sparqlQuery/getSchema/etc. call gets. Set
+# NO_DEFAULT_PREFIXES=1 to submit QUERY completely raw instead.
 
 # Default query resolves the open unknown in plans/implement-sparql-backend.md
 # finding #4: which named graphs actually exist right now, so the real CCKP

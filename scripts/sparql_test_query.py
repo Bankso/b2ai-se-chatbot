@@ -26,6 +26,7 @@ Exit codes: 0 on a "complete" result, 1 on any other outcome (timeout,
 correctly.
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -35,6 +36,11 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+GRAPH_RAG_LAMBDA_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "agents" / "cckp-copilot" / "lambda" / "cckpGraphRag" / "lambda_function.py"
+)
 
 try:
     import certifi
@@ -74,6 +80,30 @@ def resolve_pat() -> str:
     return ""
 
 
+def load_default_prefixes() -> str:
+    """Reuse the real deployed Lambda's own DEFAULT_PREFIXES constant
+    (agents/cckp-copilot/lambda/cckpGraphRag/lambda_function.py) rather than
+    hand-copying it here — a duplicated copy would silently drift the
+    moment the Lambda's prefix list changes. The Lambda's own
+    sparql_query()/get_shape()/etc. always submit with these prefixes
+    prepended (sparql_request(..., include_default_prefixes=True)); a raw
+    query lacking them will fail with an undefined-prefix parse error on
+    anything using `cckp:`/`rdfs:`/etc., exactly like the Lambda's own
+    agent-facing tool would if it didn't prepend them. Returns "" (no
+    prefixes) if the Lambda file can't be found or doesn't define the
+    constant, rather than raising — this script should still work as a
+    generic SPARQL smoke test even if run from a stripped-down checkout."""
+    if not GRAPH_RAG_LAMBDA_PATH.is_file():
+        return ""
+    try:
+        spec = importlib.util.spec_from_file_location("cckp_graph_rag_lambda", GRAPH_RAG_LAMBDA_PATH)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return getattr(module, "DEFAULT_PREFIXES", "")
+    except Exception:
+        return ""
+
+
 def http_json(method: str, url: str, token: str, body: dict | None = None) -> tuple[int, dict]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
@@ -105,11 +135,22 @@ def main() -> None:
     if not query:
         fail("SPARQL_QUERY is not set")
 
+    skip_prefixes = os.environ.get("NO_DEFAULT_PREFIXES", "").strip().lower() in ("1", "true", "yes")
+    prefixes = "" if skip_prefixes else load_default_prefixes()
+    full_query = f"{prefixes}{query}" if prefixes else query
+
     print(f"Endpoint: {endpoint}")
+    if prefixes:
+        print("Prefixes: loaded from agents/cckp-copilot/lambda/cckpGraphRag/lambda_function.py's DEFAULT_PREFIXES")
+    elif not skip_prefixes:
+        print(f"Prefixes: none (couldn't load DEFAULT_PREFIXES from {GRAPH_RAG_LAMBDA_PATH} — submitting query as-is)")
     print(f"Query:    {query}")
     print()
+    print("Full query text submitted:")
+    print(full_query)
+    print()
 
-    status, submit_body = http_json("POST", endpoint, pat, {"query": query})
+    status, submit_body = http_json("POST", endpoint, pat, {"query": full_query})
     if status != 202:
         fail(f"submit returned HTTP {status}: {submit_body}")
 
