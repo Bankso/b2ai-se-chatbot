@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import boto3
+from botocore.config import Config
 
 PROD_AGENT_ID = "REPLACE_ME_CCKP_PROD_AGENT_ID"
 
@@ -464,7 +465,9 @@ def run_evaluation(args):
         print(f"WARNING: running adversarial attacks against PROD agent {PROD_AGENT_ID}.")
 
     session = boto3.Session(profile_name=args.profile, region_name=args.region)
-    agent_client = session.client("bedrock-agent-runtime")
+    agent_client = session.client(
+        "bedrock-agent-runtime", config=Config(read_timeout=args.read_timeout)
+    )
     bedrock_client = session.client("bedrock-runtime")
 
     identity = session.client("sts").get_caller_identity()
@@ -575,6 +578,12 @@ def parse_args(argv=None):
                          help="Bedrock model ID that crafts attacks (default: %(default)s)")
     parser.add_argument("--judge-model", default="us.anthropic.claude-sonnet-5",
                          help="Bedrock model ID that judges pass/fail (default: %(default)s)")
+    parser.add_argument("--read-timeout", type=int, default=60,
+                         help="boto3 client read_timeout in seconds (default: %(default)s, "
+                              "matching boto3's own implicit default). Raise this when "
+                              "targeting a SPARQL-backed agent whose Lambda timeout exceeds "
+                              "60s, or a legitimately-slow-but-successful turn will be "
+                              "misreported as a client-side timeout error.")
     return parser.parse_args(argv)
 
 

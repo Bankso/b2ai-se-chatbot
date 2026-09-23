@@ -36,6 +36,7 @@ from pathlib import Path
 
 import boto3
 import pandas as pd
+from botocore.config import Config
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +360,9 @@ def print_metrics(results: list[dict]) -> None:
 def run_evaluation(args: argparse.Namespace) -> None:
     """Run the full KB routing evaluation pipeline."""
     session = boto3.Session(profile_name=args.profile, region_name=args.region)
-    agent_client = session.client("bedrock-agent-runtime")
+    agent_client = session.client(
+        "bedrock-agent-runtime", config=Config(read_timeout=args.read_timeout)
+    )
     bedrock_client = session.client("bedrock-runtime")
 
     sts = session.client("sts")
@@ -507,6 +510,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--judge",
         action="store_true",
         help="Enable LLM judge scoring for answer quality (off by default)",
+    )
+    parser.add_argument(
+        "--read-timeout",
+        type=int,
+        default=60,
+        help="boto3 client read_timeout in seconds (default: %(default)s, matching "
+             "boto3's own implicit default). Raise this when evaluating a SPARQL-backed "
+             "agent whose Lambda timeout exceeds 60s, or a legitimately-slow-but-"
+             "successful query will be misreported as a client-side timeout error.",
     )
     return parser.parse_args(argv)
 
