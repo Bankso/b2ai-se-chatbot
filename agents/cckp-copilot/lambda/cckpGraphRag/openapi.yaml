@@ -7,9 +7,12 @@ info:
     graph RAG. A Lambda adapter maps these operations to Bedrock action-group
     style function calls via apiPath or function name.
 
-    NOTE: this backend requires a hosted SPARQL endpoint serving the triples
-    produced by mc2-center/data-models/kg-pipeline (data/rdf/cckp_kg.ttl).
-    No such endpoint is deployed yet — see agents/README.md.
+    The Lambda submits each query to SageBrain's async job-queue endpoint
+    (POST -> job_id -> poll GET until status=="complete"), resolves the
+    current CCKP named graph (SageBrain is a shared, append-only, multi-
+    portal triple store — every query is scoped to the latest
+    urn:sagebrain:cckp:{date} snapshot), and returns parsed SPARQL 1.1 Query
+    Results JSON as {headers, rows, count} rather than raw TSV.
 tags:
   - name: sparql
     description: SPARQL and schema helper operations for the CCKP knowledge graph
@@ -19,11 +22,16 @@ paths:
       tags:
         - sparql
       operationId: sparqlQuery
-      summary: Execute an arbitrary SPARQL query
+      summary: Execute a SPARQL query, scoped to the current CCKP graph
       description: >
         Runs a SPARQL query against the configured CCKP SPARQL endpoint and
-        returns TSV text. The implementation prepends the default CCKP
-        ontology prefixes automatically.
+        returns parsed bindings. The implementation prepends the default
+        CCKP ontology prefixes and scopes the query to the current CCKP
+        named graph automatically — the query text should not include its
+        own GRAPH clause or graph URI. Always type-anchor to a cckp: class
+        (e.g. `?x a cckp:Dataset`) since this is a shared triple store
+        across multiple Sage-affiliated portals. A default LIMIT is applied
+        server-side if the query doesn't specify one.
       requestBody:
         required: true
         content:
@@ -33,30 +41,32 @@ paths:
             examples:
               tripleCount:
                 value:
-                  query: SELECT (COUNT(*) AS ?triples) WHERE { ?s ?p ?o }
+                  query: "SELECT (COUNT(*) AS ?n) WHERE { ?s a cckp:Dataset }"
       responses:
         "200":
-          description: TSV query result or application-level error payload
+          description: Parsed query result or application-level error payload
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TsvResultResponse"
+                $ref: "#/components/schemas/QueryResultResponse"
   /schema:
     post:
       tags:
         - sparql
       operationId: getSchema
-      summary: List ontology classes and properties
+      summary: List CCKP ontology classes and properties
       description: >
-        Returns a TSV table containing ontology terms, their kinds, labels,
-        comments, domains, and ranges.
+        Returns ontology terms (classes, object properties, datatype
+        properties) scoped to the CCKP namespace
+        (https://w3id.org/mc2-center/cckp-portal/) and the current CCKP
+        named graph — not every class/property on the shared triple store.
       responses:
         "200":
-          description: TSV schema result
+          description: Parsed schema result
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TsvResultResponse"
+                $ref: "#/components/schemas/QueryResultResponse"
   /shape:
     post:
       tags:
@@ -64,9 +74,14 @@ paths:
       operationId: getShape
       summary: Retrieve the SHACL shape for one CCKP class
       description: >
-        Returns a TSV table describing the SHACL node shape and property
-        constraints for the requested class. The class name may be passed either
-        as a local name like Dataset or as a prefixed value like cckp:Dataset.
+        Returns the SHACL node shape and property constraints for the
+        requested class, scoped to the current CCKP named graph. KNOWN
+        LIMITATION: as of this writing, only Dataset and Grant have a real
+        sh:targetClass-based shape upstream — Publication/Tool/
+        EducationalResource will likely return an empty result until that
+        upstream schema gap is closed (tracked in a separate data-models
+        repo plan). The class name may be passed either as a local name
+        like Dataset or as a prefixed value like cckp:Dataset.
       requestBody:
         required: true
         content:
@@ -89,17 +104,21 @@ paths:
       tags:
         - sparql
       operationId: countByType
-      summary: Count instances grouped by rdf:type
+      summary: CCKP inventory — count instances of each of the 5 CCKP classes
       description: >
-        Returns a TSV table containing per-type instance counts from the
-        knowledge graph.
+        Returns per-class instance counts for Dataset, Publication, Tool,
+        Grant, and EducationalResource, scoped to the current CCKP named
+        graph. This is an explicit per-class enumeration, not an unscoped
+        `?s a ?type` count — the shared triple store also holds NF-OSI,
+        ALS Knowledge Portal, and other portals' classes, which an unscoped
+        count would silently include.
       responses:
         "200":
-          description: TSV count result
+          description: Parsed count result
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TsvResultResponse"
+                $ref: "#/components/schemas/QueryResultResponse"
 components:
   schemas:
     SparqlQueryRequest:
@@ -110,8 +129,13 @@ components:
         query:
           type: string
           description: >
-            SPARQL query text. The Lambda implementation prepends the default CCKP
-            ontology prefixes automatically.
+            SPARQL query text (a full SELECT or ASK query, not just a
+            WHERE-clause body; CONSTRUCT/DESCRIBE are rejected). The Lambda
+            implementation prepends the default CCKP ontology prefixes and
+            scopes the query to the current CCKP named graph automatically —
+            GRAPH, FROM, and SERVICE are rejected, so do not include a graph
+            clause or graph URI in this text. A SELECT's outer LIMIT is
+            capped at 200 (added if absent).
       additionalProperties: false
     GetShapeRequest:
       type: object
@@ -124,12 +148,25 @@ components:
             Class local name such as Dataset or Grant, or a prefixed name
             like cckp:Dataset.
       additionalProperties: false
-    TsvResultResponse:
+    QueryResultResponse:
       type: object
       properties:
-        resultTsv:
-          type: string
-          description: Tab-separated query result returned by the underlying SPARQL endpoint.
+        headers:
+          type: array
+          items:
+            type: string
+          description: SPARQL result variable names, in projection order.
+        rows:
+          type: array
+          items:
+            type: object
+          description: One object per result binding, keyed by variable name.
+        count:
+          type: integer
+          description: Number of rows returned.
+        boolean:
+          type: boolean
+          description: ASK queries only — the query's true/false answer (no headers/rows).
         error:
           type: string
           description: Application-level error text returned by the function.
@@ -139,8 +176,16 @@ components:
       properties:
         className:
           type: string
-        resultTsv:
-          type: string
+        headers:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: object
+        count:
+          type: integer
         error:
           type: string
       additionalProperties: false
