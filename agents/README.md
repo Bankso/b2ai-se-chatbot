@@ -90,7 +90,7 @@ To learn more about the Synapse Custom Agent framework, refer to [this internal 
 
 - Provision the `GitHubActionsCCKPChatbot` IAM OIDC role and `AWS_OIDC_ROLE_ARN` repo secret.
 - Confirm the Synapse identity behind the existing `SYNAPSE_AUTH_TOKEN` secret is a member of Sage Brain Team (Team:3605470) — SageBrain's authorizer requires team membership specifically, separate from anything already true for Synapse API access via the SQL variant. If that token is ever swapped for a dedicated, `view`-only PAT instead of the shared one, only the secret value changes — no template/workflow change needed.
-- Kg-pipeline schema gap tracked in a separate repo: `getShape` only returns real SHACL constraint info for `Dataset`/`Grant` today — see `../data-models/plans/cckp_copilot_sparql_graph_followups.md` for the upstream fix (adding `PublicationShape`/`ToolShape`/`EducationalResourceShape` to `cckp_portal.shacl.ttl`).
+- Kg-pipeline schema gap fixed upstream but not yet live: `../data-models/plans/cckp_shacl_shape_gaps.md` added `PublicationShape`/`ToolShape`/`EducationalResourceShape` to `cckp_portal.shacl.ttl`, so `getShape` will return real SHACL constraint info for all 5 CCKP classes, not just `Dataset`/`Grant`. data-models is deliberately holding the rebuild/republish to SageBrain until this repo's graph-scoping (`_resolve_cckp_graph`) is confirmed live — see that plan's Approach §6 and Context §5's sequencing note.
 
 ### Troubleshooting
 

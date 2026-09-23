@@ -75,13 +75,15 @@ paths:
       summary: Retrieve the SHACL shape for one CCKP class
       description: >
         Returns the SHACL node shape and property constraints for the
-        requested class, scoped to the current CCKP named graph. KNOWN
-        LIMITATION: as of this writing, only Dataset and Grant have a real
-        sh:targetClass-based shape upstream — Publication/Tool/
-        EducationalResource will likely return an empty result until that
-        upstream schema gap is closed (tracked in a separate data-models
-        repo plan). The class name may be passed either as a local name
-        like Dataset or as a prefixed value like cckp:Dataset.
+        requested class, scoped to the current CCKP named graph. Upstream
+        now defines a real sh:targetClass-based shape for all 5 CCKP
+        classes (Dataset, Grant, Publication, Tool, EducationalResource),
+        but that fix is not yet live on the shared graph — it lands with
+        the next data-models republish, so Publication/Tool/
+        EducationalResource may still return an empty result until then
+        (tracked in a separate data-models repo plan). The class name may
+        be passed either as a local name like Dataset or as a prefixed
+        value like cckp:Dataset.
       requestBody:
         required: true
         content:

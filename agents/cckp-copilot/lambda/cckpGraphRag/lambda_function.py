@@ -591,17 +591,20 @@ SELECT ?term ?kind ?label ?comment ?domain ?range WHERE {{
 def get_shape(params: Dict[str, Any]) -> Dict[str, Any]:
     """Retrieve the SHACL shape for one CCKP class.
 
-    KNOWN LIMITATION: as of this writing, cckp_portal.shacl.ttl (the
-    upstream kg-pipeline's hand-authored SHACL file) only has two
+    FORMERLY A KNOWN LIMITATION: cckp_portal.shacl.ttl used to have only two
     sh:targetClass-based identifying-field shapes — DatasetShape and
-    GrantShape. Every other shape in that file targets via
-    sh:targetSubjectsOf cckp:{property} instead (a property-keyed target,
-    not a class-keyed one), so this function will most likely return an
-    empty result for Publication/Tool/EducationalResource until the
-    upstream schema gap is closed. Tracked in
-    ../data-models/plans/cckp_copilot_sparql_graph_followups.md — deferred
-    here, not fixed client-side (see plans/implement-sparql-backend.md
-    finding #9's option (d)).
+    GrantShape — so this function returned an empty result for
+    Publication/Tool/EducationalResource. Fixed upstream in
+    ../data-models/plans/cckp_shacl_shape_gaps.md, which added
+    PublicationShape, ToolShape, and EducationalResourceShape (all
+    sh:targetClass-based), for 5 total. NOT YET LIVE: that fix only landed
+    in data-models' schema files. Per that plan's Approach §6, data-models
+    is deliberately holding the rebuild/republish to SageBrain until this
+    repo's graph-scoping (_resolve_cckp_graph) is confirmed live — so
+    until the next dated snapshot is published, the live graph still only
+    has the two old shapes and this function still returns empty for the
+    other three classes. No client-side code change is needed here; the
+    query already scopes correctly via sh:targetClass cckp:{class_name}.
     """
     class_name = params.get("className", "").strip()
     if not class_name:
