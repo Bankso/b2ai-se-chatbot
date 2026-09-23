@@ -1,8 +1,5 @@
 name: Deploy Copilot stack (SPARQL)
 
-# NOTE: not deployable yet — no hosted CCKP SPARQL endpoint exists. See
-# agents/cckp-copilot/cloudformation.sparql.yaml's usage comments.
-
 on:
   workflow_dispatch:  # manually trigger dev deploys from any branch
   push:
@@ -10,6 +7,7 @@ on:
     paths:
       - agents/cckp-copilot/cloudformation.sparql.yaml
       - agents/cckp-copilot/lambda/cckpGraphRag/**
+      - agents/cckp-copilot/lambda/cckpSqlRag/lambda_function.py
 
 permissions:
   id-token: write
@@ -21,6 +19,7 @@ jobs:
     env:
       TEMPLATE: agents/cckp-copilot/cloudformation.sparql.yaml
       LAMBDA_DIR: agents/cckp-copilot/lambda/cckpGraphRag
+      SQL_LAMBDA_DIR: agents/cckp-copilot/lambda/cckpSqlRag
       S3_BUCKET: cckp-chatbot
     steps:
       - uses: actions/checkout@v4
@@ -38,12 +37,19 @@ jobs:
             echo "STACK_NAME=cckp-copilot-sparql-prod" >> "$GITHUB_ENV"
             echo "AGENT_NAME=cckp-copilot-sparql" >> "$GITHUB_ENV"
             echo "LAMBDA_FN=cckp-copilot-sparql-graphrag" >> "$GITHUB_ENV"
+            echo "URLBUILDER_FN=cckp-copilot-sparql-urlbuilder" >> "$GITHUB_ENV"
             echo "S3_KEY=lambda/cckpGraphRag.zip" >> "$GITHUB_ENV"
+            # Same dev/prod split the SQL workflow uses for its own S3_KEY —
+            # UrlBuilderFunction must never point at the wrong environment's
+            # SQL Lambda artifact.
+            echo "SQL_S3_KEY=lambda/cckpSqlRag.zip" >> "$GITHUB_ENV"
           else
             echo "STACK_NAME=cckp-copilot-sparql-dev" >> "$GITHUB_ENV"
             echo "AGENT_NAME=cckp-copilot-sparql-dev" >> "$GITHUB_ENV"
             echo "LAMBDA_FN=cckp-copilot-sparql-dev-graphrag" >> "$GITHUB_ENV"
+            echo "URLBUILDER_FN=cckp-copilot-sparql-dev-urlbuilder" >> "$GITHUB_ENV"
             echo "S3_KEY=lambda/cckpGraphRag-dev.zip" >> "$GITHUB_ENV"
+            echo "SQL_S3_KEY=lambda/cckpSqlRag-dev.zip" >> "$GITHUB_ENV"
           fi
 
       - name: Detect what changed
@@ -55,13 +61,18 @@ jobs:
           else
             echo "lambda=false" >> "$GITHUB_OUTPUT"
           fi
-          if echo "$CHANGED" | grep "agents/cckp-copilot/" | grep -qv "$LAMBDA_DIR/lambda_function.py"; then
+          if echo "$CHANGED" | grep -q "$SQL_LAMBDA_DIR/lambda_function.py"; then
+            echo "sql_lambda=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sql_lambda=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$CHANGED" | grep "agents/cckp-copilot/" | grep -v "$LAMBDA_DIR/lambda_function.py" | grep -qv "$SQL_LAMBDA_DIR/lambda_function.py"; then
             echo "stack=true" >> "$GITHUB_OUTPUT"
           else
             echo "stack=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update Lambda code
+      - name: Update GraphRag Lambda code
         if: steps.changes.outputs.lambda == 'true'
         run: |
           cd "$LAMBDA_DIR"
@@ -72,6 +83,21 @@ jobs:
             --s3-bucket "$S3_BUCKET" \
             --s3-key "$S3_KEY"
 
+      - name: Update UrlBuilder Lambda code
+        if: steps.changes.outputs.sql_lambda == 'true'
+        run: |
+          # Reuses the SQL Lambda's own source file directly (no fork) —
+          # UrlBuilderFunction only ever calls build_explore_url(), but the
+          # same package is deployed since CloudFormation deploys per S3 key,
+          # not per function.
+          cd "$SQL_LAMBDA_DIR"
+          zip /tmp/cckpSqlRag.zip lambda_function.py
+          aws s3 cp /tmp/cckpSqlRag.zip "s3://${S3_BUCKET}/${SQL_S3_KEY}"
+          aws lambda update-function-code \
+            --function-name "$URLBUILDER_FN" \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$SQL_S3_KEY"
+
       - name: Deploy stack
         if: steps.changes.outputs.stack == 'true'
         run: |
@@ -81,8 +107,9 @@ jobs:
             --parameter-overrides \
                 AgentName="$AGENT_NAME" \
                 FoundationModelId="anthropic.claude-haiku-4-5-20251001-v1:0" \
-                SparqlEndpoint="${{ secrets.CCKP_SPARQL_ENDPOINT }}" \
+                SparqlAuthToken="${{ secrets.SYNAPSE_AUTH_TOKEN }}" \
                 LambdaS3Bucket="$S3_BUCKET" \
                 LambdaS3Key="$S3_KEY" \
+                SqlLambdaS3Key="$SQL_S3_KEY" \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
