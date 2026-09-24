@@ -8,12 +8,14 @@ This benchmark is used for quality assurance of a deployed CCKP Copilot. Multipl
 
 ## Step 1: Crawl the docs sources
 
-The CCKP Copilot's docs KB is built from **two** sources, each with its own Scrapy spider. Both write into the same `output_markdown/` (git-ignored), with filenames prefixed by source so they don't collide.
+> **B2AI retarget in progress.** The CCKP/MC2 spiders were removed (recoverable from git history). The committed `help_qa_dataset_*.json` is still CCKP-derived until it is regenerated from a B2AI crawl.
+
+All spiders write into the same `output_markdown/` (git-ignored), with filenames prefixed by source so they don't collide.
 
 | Source | Spider | Covers |
 |---|---|---|
-| [CCKP help docs](https://help.cancercomplexity.synapse.org) | `cckpdocs_spider.py` | Portal process/policy/how-to content: data contribution, access requests, licensing, embargo policies |
-| [MC2 Center data model docs](https://mc2-center.github.io/data-models/) | `mc2datamodelsdocs_spider.py` | Data model reference: entity/attribute definitions, controlled vocabularies, "why/who should contribute" guidance per entity type |
+| [Bridge2AI Standards Registry docs](https://bridge2ai.github.io/b2ai-standards-registry/) | `b2ai_registry_docs_spider.py` | Portal reference content: standards, data sets, organizations, data topics/substrates, use cases, curation and access docs |
+| [Bridge2AI standards-schema docs](https://bridge2ai.github.io/standards-schemas/) | `b2ai_schemas_docs_spider.py` | LinkML data-model reference: classes (`DataStandardOrTool`, `DataSet`, `DataSubstrate`, `DataTopic`, `Organization`, `UseCase`, ...), their slots, types, and enumerations |
 
 #### Requirements
 
@@ -25,11 +27,22 @@ pip install scrapy markdownify
 
 ```bash
 cd benchmark/general-help
-scrapy runspider cckpdocs_spider.py
-scrapy runspider mc2datamodelsdocs_spider.py
+scrapy runspider b2ai_registry_docs_spider.py
+scrapy runspider b2ai_schemas_docs_spider.py
 ```
 
-Verify that `output_markdown/` was created and contains `.md` files — one per documentation page, prefixed `cckp_` or `datamodels_` by source.
+Verify that `output_markdown/` was created and contains `.md` files, prefixed `b2airegistry_` or `b2aischemas_` by source.
+
+Both spiders default to writing into `output_markdown/`. Override the output directory (e.g. for a smoke test) with either the `output_dir` spider argument or the `B2AI_DOCS_OUTPUT_DIR` environment variable:
+
+```bash
+# Smoke test: cap the crawl with Scrapy's CLOSESPIDER_PAGECOUNT and redirect output
+scrapy runspider b2ai_registry_docs_spider.py -a output_dir=/tmp/smoke -s CLOSESPIDER_PAGECOUNT=5
+# or
+B2AI_DOCS_OUTPUT_DIR=/tmp/smoke scrapy runspider b2ai_schemas_docs_spider.py -s CLOSESPIDER_PAGECOUNT=5
+```
+
+`b2ai_registry_docs_spider.py` seeds from that site's `sitemap.xml` (~189 URLs, all valid) plus an in-page-link fallback for completeness. `b2ai_schemas_docs_spider.py` crawls from the site's index page instead — that site's own `sitemap.xml` lists URLs under the wrong base path (singular `standards-schema/` instead of the live `standards-schemas/`) and 404s on every entry, so it isn't used as a seed.
 
 ---
 
