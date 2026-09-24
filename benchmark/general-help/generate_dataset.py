@@ -10,7 +10,7 @@ import anthropic
 OPENAI_MODEL = "gpt-5.4"
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 BATCH_SIZE = 5       # pages per request
-QUESTIONS_PER_BATCH = 6  # target questions per batch; yields ~54 for 43 pages / 5-page batches
+QUESTIONS_PER_BATCH = 6  # target questions per batch; yields ~390 for 323 pages / 5-page batches
 
 def count_tokens_tiktoken(text, model=OPENAI_MODEL):
     """Estimate token count using tiktoken (OpenAI)."""
@@ -66,7 +66,7 @@ def build_anthropic_tool(schema):
     clean_schema = {k: v for k, v in schema.items() if k not in ("$schema", "title")}
     return {
         "name": "generate_qa_dataset",
-        "description": "Generate a QA dataset of multiple-choice questions from CCKP documentation.",
+        "description": "Generate a QA dataset of multiple-choice questions from Bridge2AI Standards Explorer documentation.",
         "input_schema": {
             "type": "object",
             "properties": {"questions": clean_schema},
@@ -75,7 +75,7 @@ def build_anthropic_tool(schema):
     }
 
 def build_prompts(batch_docs, schema, n_questions):
-    system_content = """You are an AI assistant specializing in the Cancer Complexity Knowledge Portal (CCKP), a platform dedicated to cancer research resources — datasets, publications, tools, grants, and educational resources. Your role is to assist users in navigating these resources, understanding their content, and locating specific data files, datasets, analysis tools, and publications related to cancer research.
+    system_content = """You are an AI assistant specializing in the Bridge2AI Standards Explorer, a catalog of data standards, tools, datasets, organizations, data topics, and data substrates relevant to the NIH Bridge2AI program, backed by the Bridge2AI Standards Registry and its LinkML data model. Your role is to assist users in finding and understanding standards and related resources, the registry's data model, and how to contribute to or programmatically access the registry.
 
 Your task is to generate multiple-choice questions from the provided documentation pages.
 Each question must include:
@@ -84,10 +84,10 @@ Each question must include:
       - choices: A list of 4 to 5 answer choice strings. You may include "Not covered in documentation" if applicable.
       - labels: A list of int32 labels (0 = incorrect, 1 = correct). Exactly one label must be 1.
   - persona: One of the following, with CONTRIBUTOR and REUSER together making up at least 70% of questions:
-      - CONTRIBUTOR: a new data contributor
-      - REUSER: a researcher reanalyzing data
+      - CONTRIBUTOR: someone contributing or curating entries in the standards registry
+      - REUSER: a researcher looking for standards, tools, or datasets to use in their work
       - FUNDER: a funder from a government program or nonprofit
-      - PATIENT: a patient or advocate researching a cancer type or condition
+      - PATIENT: a patient or advocate researching how health data about a condition is standardized
       - X: unspecified
   - page_urls: List of source page URLs. Use multiple URLs for cross-page questions that draw on content from more than one of the provided pages.
   - context: Text snippet grounding the correct answer. For cross-page questions, include snippets from each source page.
@@ -95,7 +95,7 @@ Each question must include:
 Aim for a mix of single-page and cross-page questions where cross-page questions compare or combine information across the provided pages."""
 
     schema_str = json.dumps(schema, indent=2)
-    user_content = f"""# CCKP Documentation
+    user_content = f"""# Bridge2AI Standards Explorer Documentation
 
 {batch_docs}
 
@@ -173,7 +173,7 @@ def find_page_file(markdown_dir, query):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate QA dataset from CCKP docs.")
+    parser = argparse.ArgumentParser(description="Generate QA dataset from Bridge2AI Standards Explorer docs.")
     parser.add_argument(
         "--provider",
         choices=["openai", "anthropic"],
