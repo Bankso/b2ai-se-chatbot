@@ -5,8 +5,8 @@ on:
   push:
     branches: [main]
     paths:
-      - agents/cckp-copilot/cloudformation.sql.yaml
-      - agents/cckp-copilot/lambda/cckpSqlRag/**
+      - agents/b2ai-copilot/cloudformation.sql.yaml
+      - agents/b2ai-copilot/lambda/b2aiSqlRag/**
 
 permissions:
   id-token: write
@@ -16,9 +16,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      TEMPLATE: agents/cckp-copilot/cloudformation.sql.yaml
-      LAMBDA_DIR: agents/cckp-copilot/lambda/cckpSqlRag
-      S3_BUCKET: cckp-chatbot
+      TEMPLATE: agents/b2ai-copilot/cloudformation.sql.yaml
+      LAMBDA_DIR: agents/b2ai-copilot/lambda/b2aiSqlRag
+      # Not yet provisioned for the B2AI stacks -- replace with a real bucket
+      # name (and update LambdaS3Bucket accordingly) before this workflow can
+      # actually deploy.
+      S3_BUCKET: REPLACE_ME_B2AI_S3_BUCKET
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,15 +35,15 @@ jobs:
       - name: Set environment
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo "STACK_NAME=cckp-copilot-sql-prod" >> "$GITHUB_ENV"
-            echo "AGENT_NAME=cckp-copilot-sql" >> "$GITHUB_ENV"
-            echo "LAMBDA_FN=cckp-copilot-sql-sqlrag" >> "$GITHUB_ENV"
-            echo "S3_KEY=lambda/cckpSqlRag.zip" >> "$GITHUB_ENV"
+            echo "STACK_NAME=b2ai-copilot-sql-prod" >> "$GITHUB_ENV"
+            echo "AGENT_NAME=b2ai-copilot-sql" >> "$GITHUB_ENV"
+            echo "LAMBDA_FN=b2ai-copilot-sql-sqlrag" >> "$GITHUB_ENV"
+            echo "S3_KEY=lambda/b2aiSqlRag.zip" >> "$GITHUB_ENV"
           else
-            echo "STACK_NAME=cckp-copilot-sql-dev" >> "$GITHUB_ENV"
-            echo "AGENT_NAME=cckp-copilot-sql-dev" >> "$GITHUB_ENV"
-            echo "LAMBDA_FN=cckp-copilot-sql-dev-sqlrag" >> "$GITHUB_ENV"
-            echo "S3_KEY=lambda/cckpSqlRag-dev.zip" >> "$GITHUB_ENV"
+            echo "STACK_NAME=b2ai-copilot-sql-dev" >> "$GITHUB_ENV"
+            echo "AGENT_NAME=b2ai-copilot-sql-dev" >> "$GITHUB_ENV"
+            echo "LAMBDA_FN=b2ai-copilot-sql-dev-sqlrag" >> "$GITHUB_ENV"
+            echo "S3_KEY=lambda/b2aiSqlRag-dev.zip" >> "$GITHUB_ENV"
           fi
 
       - name: Detect what changed
@@ -52,7 +55,7 @@ jobs:
           else
             echo "lambda=false" >> "$GITHUB_OUTPUT"
           fi
-          if echo "$CHANGED" | grep "agents/cckp-copilot/" | grep -qv "$LAMBDA_DIR/lambda_function.py"; then
+          if echo "$CHANGED" | grep "agents/b2ai-copilot/" | grep -qv "$LAMBDA_DIR/lambda_function.py"; then
             echo "stack=true" >> "$GITHUB_OUTPUT"
           else
             echo "stack=false" >> "$GITHUB_OUTPUT"
@@ -62,8 +65,8 @@ jobs:
         if: steps.changes.outputs.lambda == 'true'
         run: |
           cd "$LAMBDA_DIR"
-          zip /tmp/cckpSqlRag.zip lambda_function.py
-          aws s3 cp /tmp/cckpSqlRag.zip "s3://${S3_BUCKET}/${S3_KEY}"
+          zip /tmp/b2aiSqlRag.zip lambda_function.py
+          aws s3 cp /tmp/b2aiSqlRag.zip "s3://${S3_BUCKET}/${S3_KEY}"
           aws lambda update-function-code \
             --function-name "$LAMBDA_FN" \
             --s3-bucket "$S3_BUCKET" \

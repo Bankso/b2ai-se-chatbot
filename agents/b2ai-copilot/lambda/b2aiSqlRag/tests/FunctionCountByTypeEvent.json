@@ -1,0 +1,10 @@
+{
+  "messageVersion": "1.0",
+  "agent": {
+    "name": "b2ai-sql-agent",
+    "version": "test"
+  },
+  "actionGroup": "b2aiSqlRag",
+  "function": "countByType",
+  "parameters": []
+}

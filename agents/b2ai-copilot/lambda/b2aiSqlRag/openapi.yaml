@@ -1,0 +1,517 @@
+openapi: 3.0.0
+info:
+  title: B2AI Standards Explorer SQL Function API
+  version: 1.0.0
+  description: >
+    This schema describes the agent-facing functions for querying the
+    Bridge2AI Standards Explorer's curated Synapse denormalized tables
+    directly via SQL (standards, datasets, organizations, topics,
+    substrates, manifest, d4d), plus a D4D (Datasheets for Datasets)
+    exploration sub-routine over the d4d table's HTML content. A Lambda
+    adapter maps these operations to Bedrock action-group style function
+    calls via apiPath or function name.
+tags:
+  - name: sql
+    description: SQL query, introspection, and portal URL operations over the B2AI tables
+  - name: d4d
+    description: >
+      D4D (Datasheets for Datasets) exploration for the 4 Bridge2AI Grand
+      Challenge organizations
+paths:
+  /sql-query:
+    post:
+      tags:
+        - sql
+      operationId: sqlQuery
+      summary: Execute a SQL query against one B2AI table
+      description: >
+        Runs a SQL query against one of the B2AI Standards Explorer's
+        Synapse denormalized tables (standards, datasets, organizations,
+        topics, substrates, manifest, or a raw synId) and returns matching
+        rows plus the total match count. The literal `{table}` in the sql
+        string is replaced with the resolved synId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SqlQueryRequest"
+            examples:
+              standardsByCategory:
+                value:
+                  table: standards
+                  sql: SELECT * FROM {table} WHERE "category" = 'Ontology or Vocabulary'
+                  limit: 25
+      responses:
+        "200":
+          description: Query result rows or application-level error payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResultResponse"
+  /portal-url:
+    post:
+      tags:
+        - sql
+      operationId: buildPortalUrl
+      summary: Build a working Bridge2AI Standards Explorer portal path
+      description: >
+        Returns a ready-to-use relative portal path for a Standard,
+        Organization, or DataTopic Detail Page (given its `id`), or for the
+        Standards search tab (optionally with a free-text `searchTerm`
+        and/or `facets`). There is no confirmed Collection-page route for
+        datasets, substrates, or manifest. RESOLVED search semantics: a
+        multi-word `searchTerm` is OR'd/unioned across words, never ANDed
+        (more words only ever broadens results) -- to require several
+        concepts at once, use one precise `searchTerm` plus `facets` (or
+        several facets on different columns), since facets AND across
+        columns, OR within one column's values, and a term ANDs against the
+        combined facets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuildPortalUrlRequest"
+            examples:
+              standardDetail:
+                value:
+                  resourceType: standards
+                  id: "B2AI_STANDARD:1"
+              organizationDetail:
+                value:
+                  resourceType: organizations
+                  id: "B2AI_ORG:1"
+              topicDetail:
+                value:
+                  resourceType: topics
+                  id: "B2AI_TOPIC:1"
+              search:
+                value:
+                  resourceType: search
+                  searchTerm: FHIR
+              searchWithFacets:
+                value:
+                  resourceType: search
+                  facets:
+                    - columnName: topic
+                      values: ["Image"]
+                    - columnName: category
+                      values: ["Ontology or Vocabulary"]
+              searchTermAndFacets:
+                value:
+                  resourceType: search
+                  searchTerm: segmentation
+                  facets:
+                    - columnName: topic
+                      values: ["Image"]
+      responses:
+        "200":
+          description: The ready-to-use portal path, or an application-level error payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuildPortalUrlResponse"
+  /columns:
+    post:
+      tags:
+        - sql
+      operationId: getColumns
+      summary: List the exact column names of one B2AI table
+      description: >
+        Returns the deployed column names for one table. Deployed names can
+        differ slightly from the data-model labels, so call this before
+        writing a SQL query against an unfamiliar table.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GetColumnsRequest"
+            examples:
+              standards:
+                value:
+                  table: standards
+      responses:
+        "200":
+          description: Requested column list or application-level error payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetColumnsResponse"
+  /count-by-type:
+    post:
+      tags:
+        - sql
+      operationId: countByType
+      summary: Count rows in each of the 7 B2AI tables
+      description: >
+        Returns a quick portal inventory: the row count of each of the
+        standards, datasets, organizations, topics, substrates, manifest,
+        and d4d tables.
+      responses:
+        "200":
+          description: Per-table row counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CountByTypeResponse"
+  /d4d-list:
+    post:
+      tags:
+        - d4d
+      operationId: listD4Ds
+      summary: List the Grand Challenge orgs that have a D4D
+      description: >
+        Returns the 4 Bridge2AI Grand Challenge organizations that have a
+        D4D (Datasheet for Dataset): orgId, display name, the D4D document's
+        own title, and a link to the org's Detail Page.
+      responses:
+        "200":
+          description: The D4D-bearing Grand Challenge orgs, or an application-level error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListD4DsResponse"
+  /d4d:
+    post:
+      tags:
+        - d4d
+      operationId: getD4D
+      summary: Get a Grand Challenge's D4D outline, or one section's text
+      description: >
+        Without `section`: returns an outline of the D4D (title plus each
+        section's id, heading, description, and size in characters). With
+        `section`: returns that section's readable text, paged under a
+        ~15,000-character budget via `offset`/`nextOffset`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GetD4DRequest"
+            examples:
+              outline:
+                value:
+                  orgId: "B2AI_ORG:114"
+              section:
+                value:
+                  orgId: "B2AI_ORG:114"
+                  section: motivation
+      responses:
+        "200":
+          description: The D4D outline or section text, or an application-level error payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetD4DResponse"
+  /d4d-search:
+    post:
+      tags:
+        - d4d
+      operationId: searchD4D
+      summary: Keyword search across one or all D4Ds
+      description: >
+        Case-insensitive keyword search across one Grand Challenge's D4D (if
+        `orgId` is given) or all of them, returning at most ~20
+        section-labelled snippets. Useful for cross-GC questions like "which
+        challenges collected consent information?".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchD4DRequest"
+            examples:
+              allOrgs:
+                value:
+                  query: consent
+              oneOrg:
+                value:
+                  query: consent
+                  orgId: "B2AI_ORG:114"
+      responses:
+        "200":
+          description: Matching snippets, or an application-level error payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchD4DResponse"
+components:
+  schemas:
+    SqlQueryRequest:
+      type: object
+      required:
+        - table
+        - sql
+      properties:
+        table:
+          type: string
+          description: >
+            Table alias (standards, datasets, organizations, topics,
+            substrates, manifest, d4d) or a raw Synapse synId. For d4d,
+            prefer the listD4Ds/getD4D/searchD4D operations over raw SQL --
+            content_text is large HTML best explored through those.
+        sql:
+          type: string
+          description: >
+            SQL query text. The literal `{table}` is replaced with the
+            resolved synId before execution.
+        limit:
+          type: integer
+          description: Maximum rows to return (default 25, max 200).
+      additionalProperties: false
+    BuildPortalUrlRequest:
+      type: object
+      required:
+        - resourceType
+      properties:
+        resourceType:
+          type: string
+          description: >
+            One of "standards", "organizations", "topics" (a Detail Page
+            lookup, requires `id`) or "search" (the Standards search tab,
+            optional `searchTerm` and/or `facets`).
+        id:
+          type: string
+          description: >
+            Required when resourceType is standards/organizations/topics.
+            Must match that table's id prefix (e.g. "B2AI_STANDARD:1",
+            "B2AI_ORG:1", "B2AI_TOPIC:1").
+        searchTerm:
+          type: string
+          description: >
+            Optional free-text search term, only used when resourceType is
+            "search". A multi-word term is OR'd/unioned across words (never
+            ANDed) -- it only ever broadens results, so use `facets`, not
+            extra words, to require several concepts at once.
+        facets:
+          type: array
+          description: >
+            Optional facet filters, only used when resourceType is
+            "search". AND across distinct columnName entries, OR within one
+            entry's values, and AND against `searchTerm` when both are
+            given. Duplicate columnName entries are merged (values unioned).
+          items:
+            type: object
+            required:
+              - columnName
+              - values
+            properties:
+              columnName:
+                type: string
+                description: >
+                  One of the facet columns shown on /Search/Standards:
+                  applicationNames, category, collections, dataTypes,
+                  hasAIApplication, isOpen, mature, registration,
+                  relevantOrgNames, topic, topicDescription,
+                  usedInBridge2AI. Check exact values first with `sqlQuery`
+                  -- never guess one.
+              values:
+                type: array
+                description: Non-empty list of non-empty exact facet values (OR'd together).
+                items:
+                  type: string
+      additionalProperties: false
+    BuildPortalUrlResponse:
+      type: object
+      properties:
+        url:
+          type: string
+          description: >
+            Ready-to-use relative portal path (e.g.
+            "/Explore/Standard/DetailsPage?id=B2AI_STANDARD:1",
+            "/Search/Standards?SEARCH_TERM=FHIR", or, with facets,
+            "/Search/Standards?qw0=..." /
+            "/Search/Standards?SEARCH_TERM=...&qw0=..."). Relative, not
+            absolute — use verbatim as a redirect target, same as any other
+            Collection/Detail Page path.
+        error:
+          type: string
+          description: Application-level error text returned by the function.
+      additionalProperties: false
+    GetColumnsRequest:
+      type: object
+      required:
+        - table
+      properties:
+        table:
+          type: string
+          description: >
+            Table alias (standards, datasets, organizations, topics,
+            substrates, manifest, d4d) or a raw Synapse synId. For d4d,
+            prefer the listD4Ds/getD4D/searchD4D operations over raw SQL --
+            content_text is large HTML best explored through those.
+      additionalProperties: false
+    QueryResultResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: Total matching row count (independent of limit).
+        headers:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: object
+        error:
+          type: string
+          description: Application-level error text returned by the function.
+      additionalProperties: false
+    GetColumnsResponse:
+      type: object
+      properties:
+        table:
+          type: string
+        columns:
+          type: array
+          items:
+            type: string
+        error:
+          type: string
+      additionalProperties: false
+    CountByTypeResponse:
+      type: object
+      properties:
+        counts:
+          type: object
+          description: Map of table alias to row count.
+        errors:
+          type: object
+          description: Map of table alias to error text, present only on partial failure.
+      additionalProperties: false
+    ListD4DsResponse:
+      type: object
+      properties:
+        d4ds:
+          type: array
+          items:
+            type: object
+            properties:
+              orgId:
+                type: string
+                description: e.g. "B2AI_ORG:114".
+              name:
+                type: string
+                description: The Grand Challenge org's display name from the organizations table.
+              title:
+                type: string
+                description: The D4D document's own <h1> title.
+              link:
+                type: string
+                description: Relative Organization Detail Page path.
+        error:
+          type: string
+      additionalProperties: false
+    GetD4DRequest:
+      type: object
+      required:
+        - orgId
+      properties:
+        orgId:
+          type: string
+          description: >
+            A Grand Challenge org id with a D4D, e.g. "B2AI_ORG:114". Call
+            listD4Ds first if unsure which orgs have one.
+        section:
+          type: string
+          description: >
+            A section id from a prior outline call (omit to get the
+            outline instead of section text).
+        offset:
+          type: integer
+          description: >
+            Character offset to resume from, from a prior response's
+            `nextOffset`. Only used with `section`.
+      additionalProperties: false
+    GetD4DResponse:
+      type: object
+      properties:
+        orgId:
+          type: string
+        orgName:
+          type: string
+        orgLink:
+          type: string
+        title:
+          type: string
+          description: Present in the outline response (no `section` given).
+        sections:
+          type: array
+          description: Present in the outline response (no `section` given).
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              heading:
+                type: string
+              description:
+                type: string
+              size:
+                type: integer
+                description: Length in characters of that section's full text.
+        section:
+          type: string
+          description: Present in a section response (echoes the requested section id).
+        heading:
+          type: string
+          description: Present in a section response.
+        text:
+          type: string
+          description: >
+            Present in a section response. The section's readable text for
+            this page, up to ~15,000 characters.
+        totalLength:
+          type: integer
+          description: Present in a section response. The section's full length in characters.
+        nextOffset:
+          type: integer
+          description: >
+            Present in a section response only when the text was truncated;
+            pass back as `offset` to get the next page.
+        error:
+          type: string
+      additionalProperties: false
+    SearchD4DRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Case-insensitive keyword or phrase to search for.
+        orgId:
+          type: string
+          description: >
+            Optional Grand Challenge org id to scope the search to one D4D
+            (omit to search across all of them).
+      additionalProperties: false
+    SearchD4DResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              orgId:
+                type: string
+              orgName:
+                type: string
+              section:
+                type: string
+                description: The section id the snippet was found in.
+              heading:
+                type: string
+              snippet:
+                type: string
+                description: Up to ~300 characters of context around the match.
+        error:
+          type: string
+      additionalProperties: false
