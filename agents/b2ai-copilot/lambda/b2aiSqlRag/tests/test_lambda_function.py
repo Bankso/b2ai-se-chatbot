@@ -199,8 +199,15 @@ class TestResolveTable:
     def test_known_alias(self, alias):
         assert _resolve_table(alias) == TABLES[alias]
 
-    def test_raw_syn_id_passthrough(self):
-        assert _resolve_table("syn12345678") == "syn12345678"
+    def test_unrelated_syn_id_rejected(self):
+        with pytest.raises(ValueError, match="Unknown table"):
+            _resolve_table("syn12345678")
+
+    @pytest.mark.parametrize("alias", list(TABLES))
+    def test_known_syn_id_resolves_to_pinned_version(self, alias):
+        bare = TABLES[alias].split(".")[0]
+        assert _resolve_table(bare) == TABLES[alias]
+        assert _resolve_table(bare + ".1") == TABLES[alias]
 
     def test_unknown_table_raises(self):
         with pytest.raises(ValueError, match="Unknown table"):
@@ -1121,3 +1128,40 @@ class TestD4DHandlerRouting:
         )
         body = _body(resp)
         assert len(body["results"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# SQL table allowlist
+# ---------------------------------------------------------------------------
+
+class TestSqlTableAllowlist:
+    def _run(self, sql, table="standards"):
+        with patch("lambda_function._run_query") as run:
+            run.return_value = {"queryResult": {"queryResults": {"headers": [], "rows": []}}, "queryCount": 0}
+            result = lambda_function.sql_query({"table": table, "sql": sql})
+        return result, run
+
+    def test_placeholder_query_runs(self):
+        result, run = self._run("SELECT * FROM {table} WHERE category = 'Registry'")
+        assert "error" not in result
+        assert run.call_args[0][1] == f"SELECT * FROM {TABLES['standards']} WHERE category = 'Registry'"
+
+    def test_other_table_in_from_rejected(self):
+        result, run = self._run("SELECT * FROM syn68258237")
+        assert "error" in result
+        run.assert_not_called()
+
+    def test_unpinned_version_of_same_table_rejected(self):
+        result, run = self._run("SELECT * FROM syn65676531")
+        assert "error" in result
+        run.assert_not_called()
+
+    def test_arbitrary_table_rejected(self):
+        result, run = self._run("SELECT * FROM syn12345678")
+        assert "error" in result
+        run.assert_not_called()
+
+    def test_syn_id_inside_string_literal_allowed(self):
+        result, run = self._run("SELECT * FROM {table} WHERE description LIKE '%syn123%'")
+        assert "error" not in result
+        run.assert_called_once()

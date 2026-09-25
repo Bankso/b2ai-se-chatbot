@@ -342,7 +342,7 @@ Resources:
         ## Toolset (SQL action group)
 
         - `getColumns(table)` — exact deployed column names; call before writing SQL against an unfamiliar table.
-        - `sqlQuery(table, sql, limit)` — filtered listing/retrieval/joins. `table` is an alias (`standards`, `datasets`, `organizations`, `topics`, `substrates`, `manifest`) or a raw synId; the Lambda resolves aliases. One call = one table; cross-table joins need two separate calls (e.g. a standard's `has_relevant_organization`/`responsible_organization` id ↔ `organizations.id`; a dataset's `producedByOrgId` ↔ `organizations.id`; a dataset's `topicIds`/`substrateIds` ↔ `topics.id`/`substrates.id`). Standards' `category` is a fixed set confirmed live: `Biomedical Standard`, `Data Standard`, `Data Standard or Tool`, `Model Repository`, `Ontology or Vocabulary`, `Registry`, `Software or Tool`, `Training Program` — match against these exact values (or `LIKE` if unsure of exact casing/wording) rather than inventing a category name. Flag-style standards columns are strings, not booleans (confirmed live): `usedInBridge2AI` and `isOpen` are `'Yes'`/`'No'`; `mature` is `'Is Mature'`/`'Is Not Mature'` — never compare them to `true`/`false`. Best filter columns: `category`/`name`/`acronym`/`concerns_data_topic`/`usedInBridge2AI` (standards), `category`/`name`/`topics`/`substrates` (datasets), `name`/`ror_id` (organizations), `name`/`category` (topics/substrates), `organization`/`data_part_name`/`concerns_data_topics` (manifest).
+        - `sqlQuery(table, sql, limit)` — filtered listing/retrieval/joins. `table` is an alias (`standards`, `datasets`, `organizations`, `topics`, `substrates`, `manifest`); always write `FROM {table}` — the Lambda substitutes the pinned synId and rejects SQL that names any other table. One call = one table; cross-table joins need two separate calls (e.g. a standard's `has_relevant_organization`/`responsible_organization` id ↔ `organizations.id`; a dataset's `producedByOrgId` ↔ `organizations.id`; a dataset's `topicIds`/`substrateIds` ↔ `topics.id`/`substrates.id`). Standards' `category` is a fixed set confirmed live: `Biomedical Standard`, `Data Standard`, `Data Standard or Tool`, `Model Repository`, `Ontology or Vocabulary`, `Registry`, `Software or Tool`, `Training Program` — match against these exact values (or `LIKE` if unsure of exact casing/wording) rather than inventing a category name. Flag-style standards columns are strings, not booleans (confirmed live): `usedInBridge2AI` and `isOpen` are `'Yes'`/`'No'`; `mature` is `'Is Mature'`/`'Is Not Mature'` — never compare them to `true`/`false`. Best filter columns: `category`/`name`/`acronym`/`concerns_data_topic`/`usedInBridge2AI` (standards), `category`/`name`/`topics`/`substrates` (datasets), `name`/`ror_id` (organizations), `name`/`category` (topics/substrates), `organization`/`data_part_name`/`concerns_data_topics` (manifest).
         - `countByType()` — row counts across all 7 tables.
         - `buildPortalUrl(resourceType, id?, searchTerm?, facets?)` — the only way to build a redirect/link target. `resourceType` is `standards`/`organizations`/`topics` (with `id`) or `search` (with optional `searchTerm` and/or `facets`, standards only); it validates `id` against the expected prefix for that resource type and rejects an unknown facet `columnName` or an empty/malformed `values` list, returning an error rather than a dead link. **Its `url` must be copied verbatim into `<target>` or a markdown link — never retype, shorten, or reconstruct any part of it from memory.**
         - `listD4Ds()` — the Grand Challenge orgs with a D4D: `orgId`, `name`, `title`, `link`.
@@ -401,9 +401,9 @@ Resources:
                     description: >
                       Runs a SQL query against one of the B2AI Standards Explorer's
                       Synapse denormalized tables (standards, datasets, organizations,
-                      topics, substrates, manifest, or a raw synId) and returns matching
+                      topics, substrates, manifest, d4d) and returns matching
                       rows plus the total match count. The literal `{table}` in the sql
-                      string is replaced with the resolved synId.
+                      string is replaced with the resolved (pinned) synId; the SQL may not reference any other table.
                     requestBody:
                       required: true
                       content:
@@ -623,14 +623,14 @@ Resources:
                         type: string
                         description: >
                           Table alias (standards, datasets, organizations, topics,
-                          substrates, manifest, d4d) or a raw Synapse synId. For d4d,
+                          substrates, manifest, d4d), or the synId of one of those tables (always resolved to its pinned version). For d4d,
                           prefer the listD4Ds/getD4D/searchD4D operations over raw SQL --
                           content_text is large HTML best explored through those.
                       sql:
                         type: string
                         description: >
                           SQL query text. The literal `{table}` is replaced with the
-                          resolved synId before execution.
+                          resolved pinned synId before execution. Use `{table}` in the FROM clause; a query naming any other synId is rejected.
                       limit:
                         type: integer
                         description: Maximum rows to return (default 25, max 200).
@@ -713,7 +713,7 @@ Resources:
                         type: string
                         description: >
                           Table alias (standards, datasets, organizations, topics,
-                          substrates, manifest, d4d) or a raw Synapse synId. For d4d,
+                          substrates, manifest, d4d), or the synId of one of those tables (always resolved to its pinned version). For d4d,
                           prefer the listD4Ds/getD4D/searchD4D operations over raw SQL --
                           content_text is large HTML best explored through those.
                     additionalProperties: false

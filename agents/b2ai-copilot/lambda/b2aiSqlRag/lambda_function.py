@@ -278,13 +278,47 @@ def extract_params(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _resolve_table(table: str) -> str:
+    """Resolve an alias, or a synId of one of TABLES, to its pinned id.
+
+    Only the pinned B2AI tables are queryable. A raw synId is accepted only
+    if its bare id belongs to TABLES, and always resolves to the *pinned*
+    version, so neither an arbitrary Synapse table nor an unpinned version
+    can be reached this way.
+    """
     if table in TABLES:
         return TABLES[table]
-    if table.startswith("syn"):
-        return table
+    if isinstance(table, str) and table.startswith("syn"):
+        bare = _bare_id(table)
+        for pinned in TABLES.values():
+            if _bare_id(pinned) == bare:
+                return pinned
     raise ValueError(
-        f"Unknown table {table!r}. Use a synId or one of: {', '.join(TABLES)}"
+        f"Unknown table {table!r}. Use one of: {', '.join(TABLES)}"
     )
+
+
+_SQL_STRING_LITERAL_RE = re.compile(r"'(?:[^']|'')*'")
+_SQL_SYN_ID_RE = re.compile(r"\bsyn\d+(?:\.\d+)?\b", re.IGNORECASE)
+
+
+def _check_sql_tables(sql: str, syn_id: str) -> Optional[str]:
+    """Return an error if the SQL references any table other than syn_id.
+
+    Synapse executes whatever table the SQL's FROM clause names, regardless
+    of the entity id in the request path (confirmed live: a query sent to
+    syn65676531's endpoint with `FROM syn68258237` returned that table's
+    rows). So the SQL itself must be checked: every synId outside a quoted
+    string literal must be exactly the resolved, pinned id.
+    """
+    unquoted = _SQL_STRING_LITERAL_RE.sub("''", sql)
+    for ref in _SQL_SYN_ID_RE.findall(unquoted):
+        if ref.lower() != syn_id.lower():
+            return (
+                f"SQL references {ref!r}, but queries may only read the "
+                f"resolved table {syn_id!r}. Use the literal {{table}} "
+                "placeholder in the FROM clause."
+            )
+    return None
 
 
 def _parse_response_body(text: str) -> Any:
@@ -397,6 +431,9 @@ def sql_query(params: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": str(e)}
 
     sql = sql.replace("{table}", syn_id)
+    error = _check_sql_tables(sql, syn_id)
+    if error:
+        return {"error": error}
     limit = _clamp_limit(params.get("limit", DEFAULT_LIMIT))
     bundle = _run_query(_bare_id(syn_id), sql, limit, PART_RESULTS | PART_COUNT)
     return _parse_bundle(bundle)
