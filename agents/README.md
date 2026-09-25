@@ -48,7 +48,7 @@ The workflow detects what changed and only runs the needed steps:
 - Lambda code only → uploads zip to S3 and updates the function in-place (no stack update)
 - Template/instructions/schema → runs `cloudformation deploy` on the stack
 
-AWS credentials use GitHub OIDC via an IAM role, stored as the `AWS_OIDC_ROLE_ARN` repo secret. **No such role has been provisioned yet for this repo** — an AWS admin needs to create one scoped to `b2ai-se-chatbot` before this workflow will succeed. The workflow's `S3_BUCKET` env var is currently the literal placeholder `REPLACE_ME_B2AI_S3_BUCKET` — replace it (and `LambdaS3Bucket`) with a real bucket name once one is provisioned.
+AWS credentials use GitHub OIDC via an IAM role, stored as the `AWS_OIDC_ROLE_ARN` repo secret. **No such role has been provisioned yet for this repo** — an AWS admin needs to create one scoped to `b2ai-se-chatbot` before this workflow will succeed. The workflow's `S3_BUCKET` env var is currently the literal placeholder `b2ai-se-copilot` — replace it (and `LambdaS3Bucket`) with a real bucket name once one is provisioned.
 
 ## Local deploys (`Makefile`)
 
@@ -64,7 +64,7 @@ make deploy-sql-prod-lambda
 make deploy-sql-prod-stack
 ```
 
-Optional overrides: `AWS_PROFILE`, `AWS_REGION` (default `us-east-1`), `FOUNDATION_MODEL_ID` (default `anthropic.claude-sonnet-4-6`), `S3_BUCKET` (default `REPLACE_ME_B2AI_S3_BUCKET` — **set this before deploying**), `SQL_STACK_NAME_DEV`/`SQL_STACK_NAME_PROD`, `SQL_AGENT_NAME_DEV`/`SQL_AGENT_NAME_PROD`, `SQL_LAMBDA_FN_DEV`/`SQL_LAMBDA_FN_PROD`.
+Optional overrides: `AWS_PROFILE`, `AWS_REGION` (default `us-east-1`), `FOUNDATION_MODEL_ID` (default `anthropic.claude-sonnet-4-6`), `S3_BUCKET` (default `b2ai-se-copilot`), `SQL_STACK_NAME_DEV`/`SQL_STACK_NAME_PROD`, `SQL_AGENT_NAME_DEV`/`SQL_AGENT_NAME_PROD`, `SQL_LAMBDA_FN_DEV`/`SQL_LAMBDA_FN_PROD`.
 
 ## Manual deployment
 
@@ -80,11 +80,11 @@ mkdir tmp
 
 zip tmp/b2aiSqlRag.zip lambda_function.py
 
-aws s3 cp tmp/b2aiSqlRag.zip "s3://REPLACE_ME_B2AI_S3_BUCKET/lambda/b2aiSqlRag-dev.zip"
+aws s3 cp tmp/b2aiSqlRag.zip "s3://b2ai-se-copilot/lambda/b2aiSqlRag-dev.zip"
 
 aws lambda update-function-code \
     --function-name b2ai-copilot-sql-dev-sqlrag \
-    --s3-bucket REPLACE_ME_B2AI_S3_BUCKET \
+    --s3-bucket b2ai-se-copilot \
     --s3-key lambda/b2aiSqlRag-dev.zip
 ```
 
@@ -95,12 +95,12 @@ aws cloudformation deploy \
 	--stack-name b2ai-copilot-sql-dev \
 	--parameter-overrides \
 		AgentName=b2ai-copilot-sql-dev \
-		LambdaS3Bucket=REPLACE_ME_B2AI_S3_BUCKET \
+		LambdaS3Bucket=b2ai-se-copilot \
 		LambdaS3Key=lambda/b2aiSqlRag-dev.zip \
 	--capabilities CAPABILITY_NAMED_IAM
 ```
 
-`REPLACE_ME_B2AI_S3_BUCKET` above is a placeholder — swap in the real artifact bucket name once one is provisioned.
+`b2ai-se-copilot` is the Lambda artifact bucket (`arn:aws:s3:::b2ai-se-copilot`).
 
 ## Setup
 
@@ -109,7 +109,7 @@ To learn more about the Synapse Custom Agent framework, refer to [this internal 
 ## Open items
 
 - **KB ID: done.** `KnowledgeBaseId` defaults to the B2AI docs KB `P3CGPTTDSQ` (provided 2026-09-25).
-- **S3 artifact bucket.** `REPLACE_ME_B2AI_S3_BUCKET` (this file, the `Makefile`, and `deploy-copilot-sql.yml`) is not yet a real bucket. The user will provide a name.
+- **S3 artifact bucket: done.** `b2ai-se-copilot` (provided 2026-09-25), set in the template, `Makefile`, and `deploy-copilot-sql.yml`.
 - **First deploy.** No `b2ai-copilot-sql-{dev,prod}` stack has ever been deployed; the `AWS_OIDC_ROLE_ARN` repo secret also needs to be provisioned before CI can deploy.
 - **Registration 236 cutover.** The live portal's `synapseChatConfig.ts` currently points at agent registration 236 ("Bridge2AI Standards Portal Assistant"). The new prod agent from this repo is intended to *replace* it, but that cutover has **not** happened — the user will make the `synapseChatConfig.ts` change themselves after this repo's agent is deployed and verified.
 - **QA dataset human review.** `benchmark/general-help/help_qa_dataset_anthropic.json` (390 Claude-generated questions) has not yet been through Step 3 human review — see that benchmark's README.

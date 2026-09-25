@@ -140,10 +140,9 @@ Parameters:
 
   LambdaS3Bucket:
     Type: String
-    Default: REPLACE_ME_B2AI_S3_BUCKET
+    Default: b2ai-se-copilot
     Description: >
-      S3 bucket containing the Lambda deployment package (.zip). Not yet
-      provisioned for the B2AI stacks — replace with a real bucket name.
+      S3 bucket containing the Lambda deployment package (.zip).
 
   LambdaS3Key:
     Type: String

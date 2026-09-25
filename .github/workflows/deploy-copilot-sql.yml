@@ -10,12 +10,11 @@ on:
         options:
           - dev
           - prod
-  # The push-to-main (prod) trigger is intentionally disabled for now: this
-  # stack's S3_BUCKET/LambdaS3Bucket are still REPLACE_ME placeholders (see the "Guard"
-  # step below and agents/b2ai-copilot/cloudformation.sql.yaml), so a merge
-  # to main would trigger this workflow and immediately fail red on every
-  # PR that touches the copilot -- there's no bucket to deploy to yet.
-  # Re-enable it once those placeholders are filled in with real values:
+  # The push-to-main (prod) trigger is intentionally disabled for now: the
+  # AWS_OIDC_ROLE_ARN repo secret isn't provisioned and no B2AI stack has
+  # been deployed yet, so a merge to main would fail red on every PR that
+  # touches the copilot. Re-enable it after the first successful manual
+  # (workflow_dispatch) deploy:
   #
   # push:
   #   branches: [main]
@@ -33,11 +32,9 @@ jobs:
     env:
       TEMPLATE: agents/b2ai-copilot/cloudformation.sql.yaml
       LAMBDA_DIR: agents/b2ai-copilot/lambda/b2aiSqlRag
-      # Not yet provisioned for the B2AI stacks -- replace with a real bucket
-      # name (and update LambdaS3Bucket accordingly) before this workflow can
-      # actually deploy. The "Guard placeholders" step below fails fast
-      # while this is still unset.
-      S3_BUCKET: REPLACE_ME_B2AI_S3_BUCKET
+      # Lambda deployment-package bucket (arn:aws:s3:::b2ai-se-copilot); keep
+      # in sync with LambdaS3Bucket's default in cloudformation.sql.yaml.
+      S3_BUCKET: b2ai-se-copilot
     steps:
       - uses: actions/checkout@v4
         with:

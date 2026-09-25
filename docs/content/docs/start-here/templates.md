@@ -16,7 +16,7 @@ The Bridge2AI Standards Explorer Copilot ships **one** CloudFormation template, 
 Key things to change for your own portal:
 - **`Instruction`** — the system prompt, embedded inline. Replace with your agent's instructions.
 - **`KnowledgeBaseId`** — defaults to the Bridge2AI Standards Explorer docs KB (`P3CGPTTDSQ`), built from a crawl of the Bridge2AI Standards Registry docs and the LinkML `standards-schemas` docs — see [Deployment](/docs/start-here/deployment/). Override the parameter to attach a different KB, or remove the block entirely.
-- **`LambdaS3Bucket`** — a placeholder (`REPLACE_ME_B2AI_S3_BUCKET`) until an S3 bucket for the Lambda deployment package is provisioned.
+- **`LambdaS3Bucket`** — the S3 bucket for the Lambda deployment package, defaulting to `b2ai-se-copilot`.
 - **`SynapseAuthToken`** — optional. Every table in `TABLES` is an open-access `TableEntity`, queryable anonymously, so this can be left blank; only set it if a future table requires authentication.
 - **`FoundationModelId`** — defaults to a Claude Sonnet cross-region inference profile; change as needed.
 

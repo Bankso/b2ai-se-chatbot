@@ -34,7 +34,7 @@ To set this up for your repo, you need a repo-specific IAM role for GitHub OIDC.
 
 No such role exists yet for this repo. Once created, store the role ARN as `AWS_OIDC_ROLE_ARN` in this repo's secrets.
 
-The workflow also needs an S3 bucket for the Lambda deployment package — `deploy-copilot-sql.yml` and `Makefile` both default to the placeholder `REPLACE_ME_B2AI_S3_BUCKET`, which the user will replace with a real bucket name once one is provisioned.
+The workflow also needs an S3 bucket for the Lambda deployment package — `deploy-copilot-sql.yml`, the `Makefile`, and the template's `LambdaS3Bucket` all default to `b2ai-se-copilot`.
 
 ## Local deploys with `make`
 

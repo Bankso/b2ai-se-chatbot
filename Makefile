@@ -25,14 +25,13 @@
 #   AWS_PROFILE            (default: your default AWS CLI profile)
 #   AWS_REGION             (default: us-east-1, matches the workflows)
 #   FOUNDATION_MODEL_ID    (default: anthropic.claude-sonnet-4-6)
-#   S3_BUCKET              (default: REPLACE_ME_B2AI_S3_BUCKET — not yet
-#                          provisioned; set this before deploying)
+#   S3_BUCKET              (default: b2ai-se-copilot)
 
 .DEFAULT_GOAL := help
 
 AWS_REGION ?= us-east-1
 FOUNDATION_MODEL_ID ?= anthropic.claude-sonnet-4-6
-S3_BUCKET ?= REPLACE_ME_B2AI_S3_BUCKET
+S3_BUCKET ?= b2ai-se-copilot
 
 AWS := aws --region $(AWS_REGION) $(if $(AWS_PROFILE),--profile $(AWS_PROFILE),)
 
