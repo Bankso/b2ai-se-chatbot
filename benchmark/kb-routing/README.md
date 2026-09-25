@@ -1,8 +1,8 @@
 # KB Routing Benchmark
 
-Evaluates whether the CCKP Copilot's multi-source Bedrock Agent selects the correct knowledge source for each query type. Forked from the NF Portal Copilot's equivalent benchmark (see [nf-osi/portal-chatbot#36](https://github.com/nf-osi/portal-chatbot/issues/36)).
+Evaluates whether the Bridge2AI Standards Explorer Copilot's multi-source Bedrock Agent selects the correct knowledge source for each query type. Forked from the NF Portal Copilot's equivalent benchmark (see [nf-osi/portal-chatbot#36](https://github.com/nf-osi/portal-chatbot/issues/36)), via this repo's earlier CCKP Copilot configuration.
 
-> **Status:** `kb_routing_dataset.json` has been repopulated with CCKP-domain sessions, adapted from the NF Portal Copilot's original set (which encoded NF-specific policy — biobanks, IRB/consent for human genetic data, embargo periods, etc. — and would be misleading if kept as-is). Sessions are grounded in real CCKP documentation and data-model facts (cross-referenced against `benchmark/general-help/help_qa_dataset_anthropic.json`) and use the `RAG` label in place of the NF version's `GRAPH`, since CCKP's deployable backend variant queries Synapse View tables via SQL rather than a knowledge graph. Run Step 2 (human validation) before using this for a real eval.
+> **Status:** `kb_routing_dataset.json` has been repopulated with B2AI-domain sessions, replacing the prior CCKP-domain set (which encoded CCKP-specific policy — Controlled/Conditional Access tiers, Grant embargo fields, the MC2 Center data model, etc. — and would be misleading if kept as-is). Sessions are grounded in real Bridge2AI Standards Registry documentation and Synapse table/D4D facts (cross-referenced against `benchmark/general-help/help_qa_dataset_anthropic.json`, and against live Synapse queries via the deployed Lambda's `sql_query`/`list_d4ds`/`get_d4d`/`search_d4d` functions). The `DOCS`/`RAG` labels carry over unchanged from the CCKP conversion — B2AI's single deployable backend variant is SQL-only (no SPARQL/graph option), and it still fits the `RAG` label for "the resource-backend action group" as opposed to the docs KB. Run Step 2 (human validation) before using this for a real eval.
 
 ## Background
 
@@ -10,8 +10,8 @@ The agent has two knowledge sources:
 
 | Source | Label | Description | Detection |
 |--------|-------|-------------|-----------|
-| CCKP Help Docs KB | `DOCS` | Bedrock KB built from help.cancercomplexity.synapse.org and the MC2 Center data model docs (mc2-center.github.io/data-models) | `KNOWLEDGE_BASE` trace event or `WEB` citation |
-| CCKP Resource Backend | `RAG` | SQL over Synapse View tables, or SPARQL over a knowledge graph, via action groups | `ACTION_GROUP` trace event |
+| B2AI Standards Registry docs KB | `DOCS` | Bedrock KB built from bridge2ai.github.io/b2ai-standards-registry (process/policy/how-to and data-model/category docs) and bridge2ai.github.io/standards-schemas (LinkML class/slot/enum docs) | `KNOWLEDGE_BASE` trace event or `WEB` citation |
+| B2AI SQL resource backend | `RAG` | SQL over the pinned Synapse denormalized tables (standards, datasets, organizations, topics, substrates, manifest), plus the D4D (Datasheets for Datasets) exploration ops (`listD4Ds`/`getD4D`/`searchD4D`) and `buildPortalUrl` redirects, all via the one `b2ai-sql-actions` action group | `ACTION_GROUP` trace event |
 
 **This benchmark measures source routing, not answer correctness.** The primary metric is whether the agent consulted the right knowledge source — determined from Bedrock trace events — not whether the response text matches a gold answer. This is distinct from the general-help eval, which scores answer quality against known correct answers for a single-source agent. Answer quality is recorded here as a secondary metric only.
 
@@ -32,14 +32,14 @@ The agent has two knowledge sources:
   "turns": [
     {
       "id": "s-mixed-01-t1",
-      "question": "What are the steps to contribute data to the CCKP?",
+      "question": "How do I submit a new data standard to the Bridge2AI Standards Explorer?",
       "expected": "DOCS",
       "persona": "CONTRIBUTOR",
       "notes": "Contribution workflow is answered by documentation."
     },
     {
       "id": "s-mixed-01-t2",
-      "question": "How many Datasets are currently on the CCKP?",
+      "question": "How many standards are currently in the catalog?",
       "expected": "RAG",
       "persona": "REUSER",
       "notes": "Live count requires querying the resource backend."
@@ -72,14 +72,14 @@ The agent has two knowledge sources:
 
 | `session_type` | Sessions | Single-turn | Multi-turn | Turns |
 |----------------|----------|-------------|------------|-------|
-| DOCS | 1 | — | 1 | 2 |
-| RAG | 2 | — | 2 | 5 |
-| MIXED | 11 | — | 11 | 35 |
+| DOCS | 6 | — | 6 | 13 |
+| RAG | 12 | 2 | 10 | 24 |
+| MIXED | 9 | — | 9 | 26 |
 | BOTH | 2 | 1 | 1 | 3 |
-| NONE | 3 | 1 | 2 | 7 |
-| **Total** | **19** | **2** | **17** | **52** |
+| NONE | 4 | 4 | — | 4 |
+| **Total** | **33** | **7** | **26** | **70** |
 
-Also added `nci-site-visit-full-flow` from the same demo question bank: a 10-turn session adapted from the vetted NCI site-visit script (covers grouping, a linked-resource collection redirect, a select-a-specific-result follow-up, a tool-recommendation question, and the real access-restricted `syn64713343` example — see its per-turn `notes` for reviewer judgment calls).
+Also includes `e2e-full-flow`, a 10-turn end-to-end session covering a portal overview, a live filtered standards query, docs follow-ups (a schema definition, the contribution process), Grand Challenge D4D exploration (outline, a section, a cross-GC consent search), a redirect to an organization's Detail Page, one more docs question, and a precondition-framed off-topic close — see its per-turn `notes` for the live Synapse facts each turn is grounded in.
 
 ---
 
@@ -131,11 +131,11 @@ python evaluate_kb_routing.py --agent-id ABC123 --judge          # also run LLM 
 python evaluate_kb_routing.py --agent-id ABC123 -n 3             # quick test: first 3 sessions
 ```
 
-`--agent-id` is required — no CCKP agent has been deployed yet. The default alias `TSTALIASID` always points to the DRAFT version. If you've updated the agent (instructions, model, action groups) without preparing it, run `aws bedrock-agent prepare-agent --agent-id <ID>` first — otherwise the eval will test the previous prepared version, not your latest changes.
+`--agent-id` is required — no B2AI agent has been deployed yet. The default alias `TSTALIASID` always points to the DRAFT version. If you've updated the agent (instructions, model, action groups) without preparing it, run `aws bedrock-agent prepare-agent --agent-id <ID>` first — otherwise the eval will test the previous prepared version, not your latest changes.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--agent-id` | _(required)_ | Bedrock Agent ID — no CCKP agent is deployed yet |
+| `--agent-id` | _(required)_ | Bedrock Agent ID — no B2AI agent is deployed yet |
 | `--alias-id` | `TSTALIASID` | Bedrock Agent alias ID (DRAFT) |
 | `-n` | all | Only run the first N sessions |
 | `--judge` | off | Enable LLM judge for answer quality scoring |
