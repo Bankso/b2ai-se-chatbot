@@ -1,12 +1,28 @@
 name: Deploy Copilot stack (SQL)
 
 on:
-  workflow_dispatch:  # manually trigger dev deploys from any branch
-  push:
-    branches: [main]
-    paths:
-      - agents/b2ai-copilot/cloudformation.sql.yaml
-      - agents/b2ai-copilot/lambda/b2aiSqlRag/**
+  workflow_dispatch:  # manually trigger dev or prod deploys from any branch
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        default: dev
+        options:
+          - dev
+          - prod
+  # The push-to-main (prod) trigger is intentionally disabled for now: this
+  # stack's S3_BUCKET/LambdaS3Bucket and the cloudformation template's
+  # KnowledgeBaseId are still REPLACE_ME placeholders (see the "Guard"
+  # step below and agents/b2ai-copilot/cloudformation.sql.yaml), so a merge
+  # to main would trigger this workflow and immediately fail red on every
+  # PR that touches the copilot -- there's no bucket/KB to deploy to yet.
+  # Re-enable it once those placeholders are filled in with real values:
+  #
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - agents/b2ai-copilot/cloudformation.sql.yaml
+  #     - agents/b2ai-copilot/lambda/b2aiSqlRag/**
 
 permissions:
   id-token: write
@@ -20,12 +36,22 @@ jobs:
       LAMBDA_DIR: agents/b2ai-copilot/lambda/b2aiSqlRag
       # Not yet provisioned for the B2AI stacks -- replace with a real bucket
       # name (and update LambdaS3Bucket accordingly) before this workflow can
-      # actually deploy.
+      # actually deploy. The "Guard placeholders" step below fails fast
+      # while this is still unset.
       S3_BUCKET: REPLACE_ME_B2AI_S3_BUCKET
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+
+      - name: Guard placeholders
+        run: |
+          if [ "${S3_BUCKET#REPLACE_ME}" != "$S3_BUCKET" ]; then
+            echo "::error::S3_BUCKET is still a REPLACE_ME placeholder ($S3_BUCKET)." \
+                 "Set a real bucket name in this workflow (and the matching" \
+                 "LambdaS3Bucket default in cloudformation.sql.yaml) before deploying."
+            exit 1
+          fi
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -34,7 +60,7 @@ jobs:
 
       - name: Set environment
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ inputs.environment }}" = "prod" ]; then
             echo "STACK_NAME=b2ai-copilot-sql-prod" >> "$GITHUB_ENV"
             echo "AGENT_NAME=b2ai-copilot-sql" >> "$GITHUB_ENV"
             echo "LAMBDA_FN=b2ai-copilot-sql-sqlrag" >> "$GITHUB_ENV"
