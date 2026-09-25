@@ -1,0 +1,1369 @@
+{
+  "generated_at": "2026-09-25T16:11:33Z",
+  "generated_by": "build_ground_truth.py",
+  "pinned_versions": {
+    "standards": "syn65676531.99",
+    "datasets": "syn68258237.15",
+    "organizations": "syn69693360.32",
+    "topics": "syn75081383.8",
+    "substrates": "syn63096834.32",
+    "manifest": "syn72106735.21",
+    "d4d": "syn68885644.13"
+  },
+  "category_counts": {
+    "keyword-lookup": 6,
+    "categorical-filter": 6,
+    "multi-filter-and": 4,
+    "multi-filter-or": 2,
+    "redirect": 8,
+    "linked-resource": 7,
+    "d4d": 5,
+    "counts": 4
+  },
+  "items": [
+    {
+      "id": "rs-keyword-fhir",
+      "category": "keyword-lookup",
+      "question": "What standard uses the acronym FHIR?",
+      "persona": "RESEARCHER",
+      "notes": "Exact-match acronym lookup; 'FHIR' resolves to exactly one standards row at the pinned version, confirmed live.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              "FHIR"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "standards",
+            "id": "B2AI_STANDARD:109"
+          }
+        }
+      ],
+      "expected_answer": {
+        "id": "B2AI_STANDARD:109",
+        "acronym": "FHIR",
+        "name": "Fast Healthcare Interoperability Resources",
+        "category": "Biomedical Standard",
+        "detail_url": "https://b2ai.standards.synapse.org/Explore/Standard/DetailsPage?id=B2AI_STANDARD:109"
+      },
+      "ground_truth_query": "SELECT id, acronym, name, category FROM {standards} WHERE \"acronym\" = 'FHIR'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-keyword-dicom",
+      "category": "keyword-lookup",
+      "question": "What is the DICOM standard?",
+      "persona": "RESEARCHER",
+      "notes": "Exact-match acronym lookup; 'DICOM' resolves to exactly one standards row at the pinned version, confirmed live.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              "DICOM"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "standards",
+            "id": "B2AI_STANDARD:98"
+          }
+        }
+      ],
+      "expected_answer": {
+        "id": "B2AI_STANDARD:98",
+        "acronym": "DICOM",
+        "name": "Digital Imaging And Communications In Medicine",
+        "category": "Biomedical Standard",
+        "detail_url": "https://b2ai.standards.synapse.org/Explore/Standard/DetailsPage?id=B2AI_STANDARD:98"
+      },
+      "ground_truth_query": "SELECT id, acronym, name, category FROM {standards} WHERE \"acronym\" = 'DICOM'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-keyword-redcap",
+      "category": "keyword-lookup",
+      "question": "Tell me about the REDCap tool.",
+      "persona": "RESEARCHER",
+      "notes": "Exact-match acronym lookup; 'REDCap' resolves to exactly one standards row at the pinned version, confirmed live.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              "REDCap"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "standards",
+            "id": "B2AI_STANDARD:821"
+          }
+        }
+      ],
+      "expected_answer": {
+        "id": "B2AI_STANDARD:821",
+        "acronym": "REDCap",
+        "name": "Research Electronic Data Capture",
+        "category": "Software or Tool",
+        "detail_url": "https://b2ai.standards.synapse.org/Explore/Standard/DetailsPage?id=B2AI_STANDARD:821"
+      },
+      "ground_truth_query": "SELECT id, acronym, name, category FROM {standards} WHERE \"acronym\" = 'REDCap'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-keyword-ncit",
+      "category": "keyword-lookup",
+      "question": "What is NCIT?",
+      "persona": "RESEARCHER",
+      "notes": "Exact-match acronym lookup; 'NCIT' resolves to exactly one standards row at the pinned version, confirmed live.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              "NCIT"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "standards",
+            "id": "B2AI_STANDARD:501"
+          }
+        }
+      ],
+      "expected_answer": {
+        "id": "B2AI_STANDARD:501",
+        "acronym": "NCIT",
+        "name": "NCI Thesaurus OBO Edition",
+        "category": "Ontology or Vocabulary",
+        "detail_url": "https://b2ai.standards.synapse.org/Explore/Standard/DetailsPage?id=B2AI_STANDARD:501"
+      },
+      "ground_truth_query": "SELECT id, acronym, name, category FROM {standards} WHERE \"acronym\" = 'NCIT'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-keyword-loinc",
+      "category": "keyword-lookup",
+      "question": "Look up the LOINC standard.",
+      "persona": "RESEARCHER",
+      "notes": "Exact-match acronym lookup; 'LOINC' resolves to exactly one standards row at the pinned version, confirmed live.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              "LOINC"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "standards",
+            "id": "B2AI_STANDARD:187"
+          }
+        }
+      ],
+      "expected_answer": {
+        "id": "B2AI_STANDARD:187",
+        "acronym": "LOINC",
+        "name": "Logical Observation Identifier Names and Codes",
+        "category": "Ontology or Vocabulary",
+        "detail_url": "https://b2ai.standards.synapse.org/Explore/Standard/DetailsPage?id=B2AI_STANDARD:187"
+      },
+      "ground_truth_query": "SELECT id, acronym, name, category FROM {standards} WHERE \"acronym\" = 'LOINC'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-keyword-snomed",
+      "category": "keyword-lookup",
+      "question": "What is SNOMED CT used for?",
+      "persona": "RESEARCHER",
+      "notes": "Exact-match acronym lookup; 'SNOMED CT' resolves to exactly one standards row at the pinned version, confirmed live.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              "SNOMED CT"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "standards",
+            "id": "B2AI_STANDARD:553"
+          }
+        }
+      ],
+      "expected_answer": {
+        "id": "B2AI_STANDARD:553",
+        "acronym": "SNOMED CT",
+        "name": "Systematized Nomenclature of Medicine - Clinical Terms",
+        "category": "Ontology or Vocabulary",
+        "detail_url": "https://b2ai.standards.synapse.org/Explore/Standard/DetailsPage?id=B2AI_STANDARD:553"
+      },
+      "ground_truth_query": "SELECT id, acronym, name, category FROM {standards} WHERE \"acronym\" = 'SNOMED CT'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-cat-ontology-vocab",
+      "category": "categorical-filter",
+      "question": "How many ontologies or vocabularies are in the catalog?",
+      "persona": "RESEARCHER",
+      "notes": "'category' is a fixed enum; 'Ontology or Vocabulary' is one exact value.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "category"
+            ],
+            "required_values": [
+              "Ontology or Vocabulary"
+            ],
+            "forbid_values": [
+              "true",
+              "false",
+              "True",
+              "False"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "column": "category",
+        "value": "Ontology or Vocabulary",
+        "count": 179,
+        "sample_id": "B2AI_STANDARD:74",
+        "sample_name": "Current Procedural Terminology"
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"category\" = 'Ontology or Vocabulary'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-cat-used-in-b2ai",
+      "category": "categorical-filter",
+      "question": "Which standards are actually used in Bridge2AI?",
+      "persona": "RESEARCHER",
+      "notes": "`usedInBridge2AI` is a STRING flag ('Yes'/'No'), not a boolean \u2014 the exact bug class fixed in review (plans/retarget-b2ai-standards-explorer.md phase 1). A query comparing to `true` would return 0 rows against the real column.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "usedInBridge2AI"
+            ],
+            "required_values": [
+              "Yes"
+            ],
+            "forbid_values": [
+              "true",
+              "false",
+              "True",
+              "False"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "column": "usedInBridge2AI",
+        "value": "Yes",
+        "count": 90,
+        "sample_id": "B2AI_STANDARD:2",
+        "sample_name": "2023 NIH Data Management and Sharing Policy"
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"usedInBridge2AI\" = 'Yes'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-cat-is-open-no",
+      "category": "categorical-filter",
+      "question": "Which standards and tools are NOT openly accessible?",
+      "persona": "RESEARCHER",
+      "notes": "`isOpen` is also a STRING flag ('Yes'/'No'); this item specifically probes the 'No' value.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "isOpen"
+            ],
+            "required_values": [
+              "No"
+            ],
+            "forbid_values": [
+              "true",
+              "false",
+              "True",
+              "False"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "column": "isOpen",
+        "value": "No",
+        "count": 51,
+        "sample_id": "B2AI_STANDARD:9",
+        "sample_name": "ANSI/CTA Standard - The Use of Artificial Intelligence in Health Care Trustworthiness"
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"isOpen\" = 'No'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-cat-mature",
+      "category": "categorical-filter",
+      "question": "Which standards are considered mature?",
+      "persona": "RESEARCHER",
+      "notes": "`mature` uses the string values 'Is Mature' / 'Is Not Mature', not a boolean.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "mature"
+            ],
+            "required_values": [
+              "Is Mature"
+            ],
+            "forbid_values": [
+              "true",
+              "false",
+              "True",
+              "False"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "column": "mature",
+        "value": "Is Mature",
+        "count": 61,
+        "sample_id": "B2AI_STANDARD:21",
+        "sample_name": "Binary Alignment Map / Compressed Reference-oriented Alignment Map"
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"mature\" = 'Is Mature'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-cat-registry",
+      "category": "categorical-filter",
+      "question": "How many registries are cataloged?",
+      "persona": "RESEARCHER",
+      "notes": "'Registry' is one of the 8 fixed `category` values.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "category"
+            ],
+            "required_values": [
+              "Registry"
+            ],
+            "forbid_values": [
+              "true",
+              "false",
+              "True",
+              "False"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "column": "category",
+        "value": "Registry",
+        "count": 19,
+        "sample_id": "B2AI_STANDARD:704",
+        "sample_name": "bio.tools"
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"category\" = 'Registry'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-cat-topic-image",
+      "category": "categorical-filter",
+      "question": "How many standards relate to the Image data topic?",
+      "persona": "RESEARCHER",
+      "notes": "Verified live sanity anchor from the retarget plan: topic HAS ('Image') -> 67. `topic` is a multi-value column; a single-topic filter uses HAS, not `=`.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "topic"
+            ],
+            "required_values": [
+              "Image"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "column": "topic",
+        "value": "Image",
+        "count": 67
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"topic\" HAS ('Image')",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-and-image-ontology",
+      "category": "multi-filter-and",
+      "question": "Which ontologies or vocabularies are about the Image data topic?",
+      "persona": "RESEARCHER",
+      "notes": "AND-intent across two DIFFERENT columns (topic, category). Verified live sanity anchor from the retarget plan: 1 hit (SQL AND and the search facets AND-across-columns both give 1). Must be two facets (or a SQL AND), never a two-word SEARCH_TERM.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "required": false,
+          "constraints": {
+            "table": "standards",
+            "and_columns": [
+              "topic",
+              "category"
+            ],
+            "required_values": [
+              "Image",
+              "Ontology or Vocabulary"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "search",
+            "required_facets": [
+              {
+                "columnName": "topic",
+                "values": [
+                  "Image"
+                ]
+              },
+              {
+                "columnName": "category",
+                "values": [
+                  "Ontology or Vocabulary"
+                ]
+              }
+            ],
+            "facet_match": "subset",
+            "search_term_forbidden_multi_word": true
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 1,
+        "matching_ids": [
+          "B2AI_STANDARD:410"
+        ],
+        "matching_names": [
+          "Biological Imaging Methods Ontology"
+        ]
+      },
+      "ground_truth_query": "SELECT * FROM {standards} WHERE \"topic\" HAS ('Image') AND \"category\" = 'Ontology or Vocabulary'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-and-used-ontology",
+      "category": "multi-filter-and",
+      "question": "Which ontologies or vocabularies are actually used in Bridge2AI (not just cataloged)?",
+      "persona": "RESEARCHER",
+      "notes": "AND-intent across usedInBridge2AI (string flag) and category.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "and_columns": [
+              "usedInBridge2AI",
+              "category"
+            ],
+            "required_values": [
+              "Yes",
+              "Ontology or Vocabulary"
+            ],
+            "forbid_values": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 7
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"usedInBridge2AI\" = 'Yes' AND \"category\" = 'Ontology or Vocabulary'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-and-used-open",
+      "category": "multi-filter-and",
+      "question": "Which standards used in Bridge2AI are also openly accessible?",
+      "persona": "FUNDER",
+      "notes": "AND-intent across two string flag columns (usedInBridge2AI, isOpen), both 'Yes'/'No'.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "required": false,
+          "constraints": {
+            "table": "standards",
+            "and_columns": [
+              "usedInBridge2AI",
+              "isOpen"
+            ],
+            "required_values": [
+              "Yes"
+            ],
+            "forbid_values": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "search",
+            "required_facets": [
+              {
+                "columnName": "usedInBridge2AI",
+                "values": [
+                  "Yes"
+                ]
+              },
+              {
+                "columnName": "isOpen",
+                "values": [
+                  "Yes"
+                ]
+              }
+            ],
+            "facet_match": "subset"
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 82
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"usedInBridge2AI\" = 'Yes' AND \"isOpen\" = 'Yes'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-and-registry-used",
+      "category": "multi-filter-and",
+      "question": "Which registries are used in Bridge2AI?",
+      "persona": "CONTRIBUTOR",
+      "notes": "AND-intent, category=Registry plus the usedInBridge2AI string flag.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "and_columns": [
+              "category",
+              "usedInBridge2AI"
+            ],
+            "required_values": [
+              "Registry",
+              "Yes"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 0
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"category\" = 'Registry' AND \"usedInBridge2AI\" = 'Yes'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-or-image-genome",
+      "category": "multi-filter-or",
+      "question": "Show me standards about either the Image or Genome data topics.",
+      "persona": "RESEARCHER",
+      "notes": "Either-of intent on the SAME column (topic): OR within one column's values via SQL HAS or a facet with multiple values. Verified live sanity anchor: 121.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "required": false,
+          "constraints": {
+            "table": "standards",
+            "or_column": "topic",
+            "or_values": [
+              "Image",
+              "Genome"
+            ]
+          }
+        },
+        {
+          "function": "buildPortalUrl",
+          "required": false,
+          "constraints": {
+            "resourceType": "search",
+            "required_facets": [
+              {
+                "columnName": "topic",
+                "values": [
+                  "Image",
+                  "Genome"
+                ]
+              }
+            ],
+            "facet_match": "subset"
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 121
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"topic\" HAS ('Image', 'Genome')",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-or-ontology-registry",
+      "category": "multi-filter-or",
+      "question": "List standards that are either an ontology/vocabulary or a registry.",
+      "persona": "RESEARCHER",
+      "notes": "Either-of intent on the same `category` column; OR is correct here, not AND.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "or_column": "category",
+            "or_values": [
+              "Ontology or Vocabulary",
+              "Registry"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 198
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"category\" = 'Ontology or Vocabulary' OR \"category\" = 'Registry'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-redirect-term-and-facet",
+      "category": "redirect",
+      "question": "Give me a link to search results for standards mentioning segmentation, within the Image data topic.",
+      "persona": "RESEARCHER",
+      "notes": "Term-AND-facet case from the retarget plan: SEARCH_TERM='segmentation' plus topic=[Image] ANDs (16 alone -> 3 with the facet). Grades the decoded qw0 facet plus the (single-word) SEARCH_TERM, not a live count.",
+      "expected_tool_calls": [
+        {
+          "function": "buildPortalUrl",
+          "constraints": {
+            "resourceType": "search",
+            "search_term_exact": "segmentation",
+            "search_term_forbidden_multi_word": true,
+            "required_facets": [
+              {
+                "columnName": "topic",
+                "values": [
+                  "Image"
+                ]
+              }
+            ],
+            "facet_match": "subset"
+          }
+        }
+      ],
+      "expected_answer": {
+        "url_path": "/Search/Standards?SEARCH_TERM=segmentation&qw0=H4sIAAAAAAACEyWNwQrCMBBE/2XPkg/oVRC8eBDxIj1st2MpJtmYbClS%2Bu8mepnD8ObNRgUeYhhPLLBC3WMj0SgZhtsngTrSPLnCE4ZZI2zV/CouI6kLOsI748HD/eZH9UuId/YLyhXvmkaHqmvthUOTmaZZavls/J%2Bsn3QO9YD6vd%2B/Pm0U0pIAAAA%3D",
+        "note": "qw0 is opaque/self-verifying; grade the decoded facets, not the literal string."
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-link-fhir-orgs",
+      "category": "linked-resource",
+      "question": "Which organizations are responsible for, or relevant to, the FHIR standard?",
+      "persona": "RESEARCHER",
+      "notes": "standard -> organization join via has_relevant_organization / responsible_organization (ids) -- confirmed live: FHIR (B2AI_STANDARD:109) has 3 relevant orgs and 1 responsible org (HL7, B2AI_ORG:40).",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              "FHIR"
+            ]
+          }
+        },
+        {
+          "function": "sqlQuery",
+          "required": false,
+          "constraints": {
+            "table": "organizations",
+            "join_hint": "organizations.id IN has_relevant_organization/responsible_organization"
+          }
+        }
+      ],
+      "expected_answer": {
+        "standard_id": "B2AI_STANDARD:109",
+        "relevant_org_ids": [
+          "B2AI_ORG:114",
+          "B2AI_ORG:117",
+          "B2AI_ORG:128"
+        ],
+        "responsible_org_ids": [
+          "B2AI_ORG:40"
+        ],
+        "responsible_org_names": [
+          "HL7"
+        ]
+      },
+      "ground_truth_query": "SELECT has_relevant_organization, responsible_organization FROM {standards} WHERE \"acronym\" = 'FHIR'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-link-cpt-to-org",
+      "category": "linked-resource",
+      "question": "Who is responsible for maintaining the CPT standard?",
+      "persona": "RESEARCHER",
+      "notes": "standard -> organization join, direction 1 (responsible_organization). Confirmed live: CPT (B2AI_STANDARD:74) -> responsible_organization = [B2AI_ORG:3] (American Medical Association / AMA).",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              "CPT"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "standard_id": "B2AI_STANDARD:74",
+        "responsible_org_ids": [
+          "B2AI_ORG:3"
+        ],
+        "responsible_org_names": [
+          "American Medical Association"
+        ]
+      },
+      "ground_truth_query": "SELECT responsible_organization, responsibleOrgName FROM {standards} WHERE \"acronym\" = 'CPT'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-link-org-governs",
+      "category": "linked-resource",
+      "question": "What standards does the AMA govern?",
+      "persona": "RESEARCHER",
+      "notes": "organization -> standard join, direction 2 (governed_standards_json), the inverse of the CPT item above -- both directions confirmed to agree (CPT's responsible_organization is B2AI_ORG:3, and B2AI_ORG:3's governed_standards_json includes CPT / B2AI_STANDARD:74).",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "organizations",
+            "required_columns": [
+              "name"
+            ],
+            "required_values": [
+              "AMA"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "org_id": "B2AI_ORG:3",
+        "governed_standard_ids": [
+          "B2AI_STANDARD:74",
+          "B2AI_STANDARD:966",
+          "B2AI_STANDARD:550"
+        ],
+        "governed_standard_ids_contains": "B2AI_STANDARD:74"
+      },
+      "ground_truth_query": "SELECT governed_standards_json FROM {organizations} WHERE \"name\" = 'AMA'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-link-dataset-org",
+      "category": "linked-resource",
+      "question": "Which organization produced the 'Cell Maps for Artificial Intelligence' dataset?",
+      "persona": "REUSER",
+      "notes": "dataset -> organization join via producedByOrgId. Confirmed live: B2AI_DATA:1 -> producedByOrgId = [B2AI_ORG:116] (Functional Genomics Grand Challenge / CM4AI).",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "datasets",
+            "required_columns": [
+              "name"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "dataset_id": "B2AI_DATA:1",
+        "producing_org_ids": [
+          "B2AI_ORG:116"
+        ],
+        "producing_org_names": [
+          "Functional Genomics Grand Challenge"
+        ]
+      },
+      "ground_truth_query": "SELECT producedByOrgId, producedBy FROM {datasets} WHERE id = 'B2AI_DATA:1'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-link-topic-standards",
+      "category": "linked-resource",
+      "question": "Which standards are associated with the Image data topic, and how many are there?",
+      "persona": "RESEARCHER",
+      "notes": "topic -> standards join via topics.standardsJson, cross-checked against the standards table's own topic HAS ('Image') count -- both give 67, confirming the denormalized join is consistent both ways.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "topics",
+            "required_columns": [
+              "name"
+            ],
+            "required_values": [
+              "Image"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "topic_id": "B2AI_TOPIC:15",
+        "standard_count": 67,
+        "standard_ids_contains": "B2AI_STANDARD:410"
+      },
+      "ground_truth_query": "SELECT standardsJson FROM {topics} WHERE \"name\" = 'Image'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-link-org-datasets",
+      "category": "linked-resource",
+      "question": "What datasets has the Salutogenesis Grand Challenge (AI-READI) produced?",
+      "persona": "REUSER",
+      "notes": "organization -> dataset join via organizations.datasets, the inverse of producedByOrgId.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "organizations",
+            "required_columns": [
+              "name"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "org_id": "B2AI_ORG:114",
+        "dataset_ids": [
+          "B2AI_DATA:2",
+          "B2AI_DATA:114"
+        ]
+      },
+      "ground_truth_query": "SELECT datasets, dataset_names FROM {organizations} WHERE id = 'B2AI_ORG:114'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-link-negative",
+      "category": "linked-resource",
+      "question": "What organization is responsible for the '.ACE format' standard?",
+      "persona": "RESEARCHER",
+      "notes": "Deliberate negative case: B2AI_STANDARD:1 ('.ACE format') has NULL has_relevant_organization and responsible_organization, confirmed live. The agent should report no linked organization is recorded, not fabricate one or claim the standard doesn't exist (it does -- it's just unlinked).",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "acronym"
+            ],
+            "required_values": [
+              ".ACE format"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "standard_id": "B2AI_STANDARD:1",
+        "responsible_org_ids": [],
+        "relevant_org_ids": [],
+        "expect_no_link_reported": true
+      },
+      "ground_truth_query": "SELECT has_relevant_organization, responsible_organization FROM {standards} WHERE id = 'B2AI_STANDARD:1'",
+      "llm_judge_fallback": true
+    },
+    {
+      "id": "rs-redirect-standard-detail",
+      "category": "redirect",
+      "question": "Take me to the FHIR standard's page.",
+      "persona": "RESEARCHER",
+      "notes": "Direct Detail Page redirect; grade the exact id/path, not a search link.",
+      "expected_tool_calls": [
+        {
+          "function": "buildPortalUrl",
+          "constraints": {
+            "resourceType": "standards",
+            "id": "B2AI_STANDARD:109"
+          }
+        }
+      ],
+      "expected_answer": {
+        "url_path": "/Explore/Standard/DetailsPage?id=B2AI_STANDARD:109"
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-redirect-org-detail",
+      "category": "redirect",
+      "question": "Take me to the AI-READI Grand Challenge organization page.",
+      "persona": "RESEARCHER",
+      "notes": "Direct Organization Detail Page redirect (resourceType=organizations).",
+      "expected_tool_calls": [
+        {
+          "function": "buildPortalUrl",
+          "constraints": {
+            "resourceType": "organizations",
+            "id": "B2AI_ORG:114"
+          }
+        }
+      ],
+      "expected_answer": {
+        "url_path": "/Explore/Organization/OrganizationDetailsPage?id=B2AI_ORG:114"
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-redirect-topic-detail",
+      "category": "redirect",
+      "question": "Take me to the Image data topic's page.",
+      "persona": "RESEARCHER",
+      "notes": "Direct DataTopic Detail Page redirect (resourceType=topics).",
+      "expected_tool_calls": [
+        {
+          "function": "buildPortalUrl",
+          "constraints": {
+            "resourceType": "topics",
+            "id": "B2AI_TOPIC:15"
+          }
+        }
+      ],
+      "expected_answer": {
+        "url_path": "/Explore/DataTopic/DetailsPage?id=B2AI_TOPIC:15"
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-redirect-and-facets",
+      "category": "redirect",
+      "question": "Give me a link to search results for ontology/vocabulary standards about the Image data topic.",
+      "persona": "RESEARCHER",
+      "notes": "AND-intent redirect: must use two facets (topic + category), never a two-word SEARCH_TERM. qw0 decodes to selectedFacets with both columns; live-verified count 1.",
+      "expected_tool_calls": [
+        {
+          "function": "buildPortalUrl",
+          "constraints": {
+            "resourceType": "search",
+            "required_facets": [
+              {
+                "columnName": "topic",
+                "values": [
+                  "Image"
+                ]
+              },
+              {
+                "columnName": "category",
+                "values": [
+                  "Ontology or Vocabulary"
+                ]
+              }
+            ],
+            "facet_match": "exact",
+            "search_term_forbidden_multi_word": true
+          }
+        }
+      ],
+      "expected_answer": {
+        "live_count_sanity_anchor": 1
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-redirect-or-facet",
+      "category": "redirect",
+      "question": "Give me a link to search results for standards about either the Image or Genome topics.",
+      "persona": "RESEARCHER",
+      "notes": "Either-of intent: one facet, two values (OR within the column), not two separate facets.",
+      "expected_tool_calls": [
+        {
+          "function": "buildPortalUrl",
+          "constraints": {
+            "resourceType": "search",
+            "required_facets": [
+              {
+                "columnName": "topic",
+                "values": [
+                  "Image",
+                  "Genome"
+                ]
+              }
+            ],
+            "facet_match": "exact"
+          }
+        }
+      ],
+      "expected_answer": {
+        "live_count_sanity_anchor": 121
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-redirect-keyword-search",
+      "category": "redirect",
+      "question": "Give me a link to search the standards catalog for FHIR.",
+      "persona": "RESEARCHER",
+      "notes": "Plain single-word SEARCH_TERM redirect with no facets -- the baseline case, contrasted with the AND/OR facet redirect items above.",
+      "expected_tool_calls": [
+        {
+          "function": "buildPortalUrl",
+          "constraints": {
+            "resourceType": "search",
+            "search_term_exact": "FHIR"
+          }
+        }
+      ],
+      "expected_answer": {
+        "url_path": "/Search/Standards?SEARCH_TERM=FHIR"
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-redirect-forbidden-multiword",
+      "category": "redirect",
+      "question": "Give me a link to search results for standards that are about BOTH imaging AND genomics.",
+      "persona": "RESEARCHER",
+      "notes": "The key AND-vs-OR trap from the retarget plan: 'imaging' (107) + 'genomics' (112) as a two-word SEARCH_TERM gives 213 (an OR/union), not an AND of both concepts. A correct agent must NOT put both words in SEARCH_TERM; it should use facets/a single term, or explain the search can't strictly AND two free-text concepts. This item's grading is primarily the forbidden-shape check (fail if SEARCH_TERM has >1 word here), not a count.",
+      "expected_tool_calls": [
+        {
+          "function": "buildPortalUrl",
+          "constraints": {
+            "resourceType": "search",
+            "search_term_forbidden_multi_word": true
+          }
+        }
+      ],
+      "expected_answer": {
+        "explanation_required": true,
+        "must_not_claim_and_semantics_for_multiword_search_term": true
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": true
+    },
+    {
+      "id": "rs-d4d-section-fact",
+      "category": "d4d",
+      "question": "Does the CM4AI Grand Challenge's dataset involve human subjects?",
+      "persona": "PATIENT",
+      "notes": "Single-GC D4D section fact. Confirmed live: getD4D(B2AI_ORG:116, section='human-subjects') text includes 'Involves Human Subjects: False' (non-clinical cell-line data).",
+      "expected_tool_calls": [
+        {
+          "function": "listD4Ds",
+          "required": false,
+          "constraints": {}
+        },
+        {
+          "function": "getD4D",
+          "constraints": {
+            "orgId": "B2AI_ORG:116"
+          }
+        },
+        {
+          "function": "getD4D",
+          "constraints": {
+            "orgId": "B2AI_ORG:116",
+            "section": "human-subjects"
+          }
+        }
+      ],
+      "expected_answer": {
+        "org_id": "B2AI_ORG:116",
+        "section": "human-subjects",
+        "involves_human_subjects": false,
+        "text_contains": "Involves Human Subjects: False"
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": true
+    },
+    {
+      "id": "rs-d4d-cross-gc-consent",
+      "category": "d4d",
+      "question": "Which Bridge2AI Grand Challenges' datasheets discuss participant consent?",
+      "persona": "PATIENT",
+      "notes": "Cross-GC comparison -- must use searchD4D, not getD4D on one org. Confirmed live: 'consent' hits AI-READI (114), CM4AI (116), and Voice (117), but NOT CHoRUS (115), which discusses IRB/ethics oversight without the literal word 'consent'. A correct answer names exactly these 3 GCs, not all 4.",
+      "expected_tool_calls": [
+        {
+          "function": "searchD4D",
+          "constraints": {
+            "query_contains": "consent",
+            "orgId_must_be_absent": true
+          }
+        }
+      ],
+      "expected_answer": {
+        "matching_org_ids": [
+          "B2AI_ORG:114",
+          "B2AI_ORG:116",
+          "B2AI_ORG:117"
+        ],
+        "non_matching_org_ids": [
+          "B2AI_ORG:115"
+        ]
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": true
+    },
+    {
+      "id": "rs-d4d-outline",
+      "category": "d4d",
+      "question": "Give me an overview of the AI-READI Grand Challenge's dataset datasheet (D4D).",
+      "persona": "RESEARCHER",
+      "notes": "Outline request -- getD4D with no `section` returns the outline (7 flat sections: motivation, composition, collection-process, uses, distribution, maintenance, human-subjects -- confirmed live, no 'Preprocessing' section exists here).",
+      "expected_tool_calls": [
+        {
+          "function": "listD4Ds",
+          "required": false,
+          "constraints": {}
+        },
+        {
+          "function": "getD4D",
+          "constraints": {
+            "orgId": "B2AI_ORG:114",
+            "section": null
+          }
+        }
+      ],
+      "expected_answer": {
+        "org_id": "B2AI_ORG:114",
+        "title": "AI READI Dataset Documentation",
+        "section_ids": [
+          "motivation",
+          "composition",
+          "collection-process",
+          "uses",
+          "distribution",
+          "maintenance",
+          "human-subjects"
+        ]
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": true
+    },
+    {
+      "id": "rs-d4d-not-covered",
+      "category": "d4d",
+      "question": "Do any of the Grand Challenge datasheets discuss blockchain data provenance?",
+      "persona": "RESEARCHER",
+      "notes": "Deliberate 'not covered' case: searchD4D('blockchain') returns 0 snippets across all 4 D4Ds, confirmed live. The agent must say plainly that no D4D covers this, not invent an answer or claim a section is silent when it was never checked.",
+      "expected_tool_calls": [
+        {
+          "function": "searchD4D",
+          "constraints": {
+            "query_contains": "blockchain"
+          }
+        }
+      ],
+      "expected_answer": {
+        "hit_count": 0,
+        "expect_not_covered_reported": true
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": true
+    },
+    {
+      "id": "rs-d4d-list",
+      "category": "d4d",
+      "question": "Which Bridge2AI Grand Challenges have a dataset datasheet (D4D) available?",
+      "persona": "RESEARCHER",
+      "notes": "Basic listD4Ds call; confirmed live: exactly the 4 GC orgs 114-117.",
+      "expected_tool_calls": [
+        {
+          "function": "listD4Ds",
+          "constraints": {}
+        }
+      ],
+      "expected_answer": {
+        "org_ids": [
+          "B2AI_ORG:114",
+          "B2AI_ORG:115",
+          "B2AI_ORG:116",
+          "B2AI_ORG:117"
+        ],
+        "count": 4
+      },
+      "ground_truth_query": null,
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-counts-by-type",
+      "category": "counts",
+      "question": "How many standards, datasets, organizations, and topics are in the portal?",
+      "persona": "FUNDER",
+      "notes": "countByType across all 7 pinned tables; counts are exact for the pinned versions.",
+      "expected_tool_calls": [
+        {
+          "function": "countByType",
+          "constraints": {}
+        }
+      ],
+      "expected_answer": {
+        "counts": {
+          "standards": 1029,
+          "datasets": 116,
+          "organizations": 130,
+          "topics": 82,
+          "substrates": 81,
+          "manifest": 70,
+          "d4d": 5
+        }
+      },
+      "ground_truth_query": "countByType()",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-counts-registry",
+      "category": "counts",
+      "question": "How many registries does the catalog have?",
+      "persona": "FUNDER",
+      "notes": "Per-category count, category='Registry'.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "category"
+            ],
+            "required_values": [
+              "Registry"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 19
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"category\" = 'Registry'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-counts-training",
+      "category": "counts",
+      "question": "How many training programs are cataloged?",
+      "persona": "STUDENT",
+      "notes": "Per-category count, category='Training Program'.",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "standards",
+            "required_columns": [
+              "category"
+            ],
+            "required_values": [
+              "Training Program"
+            ]
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 223
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {standards} WHERE \"category\" = 'Training Program'",
+      "llm_judge_fallback": false
+    },
+    {
+      "id": "rs-counts-datasets-total",
+      "category": "counts",
+      "question": "How many datasets does the Bridge2AI Standards Explorer catalog in total?",
+      "persona": "REUSER",
+      "notes": "Total row count for the datasets table (no filter).",
+      "expected_tool_calls": [
+        {
+          "function": "sqlQuery",
+          "constraints": {
+            "table": "datasets"
+          }
+        }
+      ],
+      "expected_answer": {
+        "count": 116
+      },
+      "ground_truth_query": "SELECT COUNT(*) FROM {datasets}",
+      "llm_judge_fallback": false
+    }
+  ]
+}

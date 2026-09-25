@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Resource Search Correctness Dataset",
+  "description": "Ground-truth items for grading the B2AI Standards Explorer Copilot's resource-backend (SQL action group) correctness: parameter/filter-shape decoded from Bedrock traces, plus live-Synapse-verified answer facts. Unlike kb_routing_schema.json (a plain array), this dataset is a single object because every item's ground truth is tied to a specific set of pinned Synapse table versions, which must travel with the items themselves so staleness is detectable (see build_ground_truth.py).",
+  "type": "object",
+  "required": ["generated_at", "pinned_versions", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "generated_at": {
+      "type": "string",
+      "description": "UTC timestamp (from build_ground_truth.py) when this dataset's live values were last (re)computed."
+    },
+    "generated_by": {
+      "type": "string",
+      "description": "Name of the script that produced this file."
+    },
+    "pinned_versions": {
+      "type": "object",
+      "description": "Verbatim copy of TABLES from agents/b2ai-copilot/lambda/b2aiSqlRag/lambda_function.py at generation time (alias -> versioned synId, e.g. 'syn65676531.99'). If this drifts from the Lambda's current TABLES, re-run build_ground_truth.py before trusting the counts/ids below.",
+      "additionalProperties": { "type": "string" }
+    },
+    "category_counts": {
+      "type": "object",
+      "description": "Item count per category, for quick coverage auditing (informational; not used for grading).",
+      "additionalProperties": { "type": "integer" }
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/item" }
+    }
+  },
+  "definitions": {
+    "item": {
+      "type": "object",
+      "required": [
+        "id", "category", "question", "notes",
+        "expected_tool_calls", "expected_answer", "llm_judge_fallback"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique item identifier (slug), e.g. 'rs-keyword-fhir'."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "keyword-lookup",
+            "categorical-filter",
+            "multi-filter-and",
+            "multi-filter-or",
+            "linked-resource",
+            "redirect",
+            "d4d",
+            "counts"
+          ],
+          "description": "Coverage bucket, matching the resource-search benchmark plan's categories (adapted from the CCKP plan's keyword/multi-filter/linked-resource/redirect set, replacing CCKP's dataset-operations/access-restriction category -- not applicable here, since every B2AI table is open access -- with a 'd4d' category for the Grand Challenge datasheet sub-routine)."
+        },
+        "question": {
+          "type": "string",
+          "description": "The natural-language, good-faith question as a user would ask it."
+        },
+        "persona": {
+          "type": "string",
+          "enum": ["RESEARCHER", "REUSER", "FUNDER", "CONTRIBUTOR", "STUDENT", "PATIENT", "X"],
+          "description": "Optional user persona, for flavor/coverage auditing only (not graded)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Grading rationale: why this expected shape/answer is correct, what failure mode it targets (e.g. the 'Yes'/'No' string-flag bug class, AND-vs-OR facet semantics, a deliberate negative-link or not-covered case), and any live-verified sanity anchors."
+        },
+        "expected_tool_calls": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The tool call(s) a correct agent should make. Each entry is matched against the actual actionGroupInvocationInput events decoded from the Bedrock trace by function name (and, for sqlQuery/getD4D, by the 'table'/'orgId' constraint) before its constraints are checked. An entry with \"required\": false describes an acceptable alternative/optional call (e.g. an agent may answer a keyword lookup via sqlQuery alone, or additionally confirm with buildPortalUrl) -- at least one \"required\" (default true) entry per distinct function name must be satisfied for the item to score 1.0 on tool-call shape.",
+          "items": { "$ref": "#/definitions/expected_tool_call" }
+        },
+        "expected_answer": {
+          "type": "object",
+          "description": "Live-Synapse-verified ground-truth facts (ids/names/counts/links/sections) the agent's final answer should be consistent with. Shape varies by category; see build_ground_truth.py's recipes for the exact fields each category produces (e.g. keyword-lookup: id/acronym/name/category/detail_url; counts: count or counts; linked-resource: *_ids/*_names; d4d: org_id/section/text_contains). Left as a free-form object (not deeply schema-validated) because its shape is inherently polymorphic per category -- deep validation lives in evaluate_resource_search.py's per-category grading functions and in the unit tests, not in this schema.",
+          "minProperties": 1
+        },
+        "ground_truth_query": {
+          "type": ["string", "null"],
+          "description": "The SQL (with {table}) or operation (e.g. 'countByType()') build_ground_truth.py ran to compute expected_answer, for auditability. null when the item's ground truth comes from a non-SQL call (buildPortalUrl/getD4D/searchD4D/listD4Ds) instead."
+        },
+        "llm_judge_fallback": {
+          "type": "boolean",
+          "description": "True when expected_answer includes free-text facts (e.g. a D4D section's narrative content, a negative-link explanation) that can't be fully verified by deterministic substring/ID checks alone, so evaluate_resource_search.py's LLM-judge fallback is the intended secondary signal for this item's answer-fact grade. False means grading is fully deterministic (ids/counts/decoded shapes) and the judge is not needed (and skippable via --no-judge without losing signal on this item)."
+        }
+      }
+    },
+    "expected_tool_call": {
+      "type": "object",
+      "required": ["function", "constraints"],
+      "additionalProperties": false,
+      "properties": {
+        "function": {
+          "type": "string",
+          "enum": [
+            "sqlQuery", "buildPortalUrl", "getColumns", "countByType",
+            "listD4Ds", "getD4D", "searchD4D"
+          ],
+          "description": "operationId from agents/b2ai-copilot/lambda/b2aiSqlRag/openapi.yaml / the function the Lambda dispatches on."
+        },
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this exact call must appear for the item to score 1.0 on tool-call shape. false marks an acceptable alternative or an optional confirmatory call that doesn't have to happen."
+        },
+        "constraints": {
+          "type": "object",
+          "description": "Function-specific parameter constraints checked deterministically by evaluate_resource_search.py against the decoded actionGroupInvocationInput parameters (and, for buildPortalUrl, against the decoded qw0). Recognized keys by function -- sqlQuery: table, required_columns, required_values, forbid_values, and_columns, or_column, or_values, join_hint (informational only); buildPortalUrl: resourceType, id, search_term_exact, search_term_forbidden_multi_word, required_facets ([{columnName, values}]), facet_match ('exact'|'subset', default 'subset'); getD4D: orgId, section (a string id, or null to require the outline call i.e. no 'section' param); searchD4D: query_contains, orgId, orgId_must_be_absent; getColumns: table; countByType/listD4Ds: {} (no parameters expected)."
+        }
+      }
+    }
+  }
+}
