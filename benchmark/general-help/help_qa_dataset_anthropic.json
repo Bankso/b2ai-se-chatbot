@@ -5488,7 +5488,7 @@
     "mc1_targets": {
       "choices": [
         "Data schemas for Bridge2AI Standards and Use Cases",
-        "Hosting the crawled documentation for the CCKP",
+        "Hosting the Standards Explorer portal's web application code",
         "Storing raw genomics and transcriptome datasets",
         "Managing user accounts for the Standards Explorer"
       ],
