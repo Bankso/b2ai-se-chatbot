@@ -103,26 +103,37 @@ Goal: a user can pick a Grand Challenge's D4D and explore it conversationally: g
 2. **Docs KB crawl**: spiders written and smoke-tested on 5 pages; the full crawl waits for confirmation.
    - Keeping **two sources**. The user's note suggested one, but I checked: the registry site has no schema docs. Its sitemap is only data-catalog pages (82 substrates, 53 topics, 44 use cases, plus DataTopic/Organization/DataSubstrate/UseCase listings, categories, curation, programmatic-access, ai-access, manifest). No page mentions slots, cardinality or LinkML classes, and the home page links out to the standards-schemas GitHub repo for the schema.
    - `b2ai_schemas_docs_spider.py` crawls from the index page, because the standards-schemas sitemap lists 404 URLs (`standards-schema/`, singular). That's worth reporting upstream.
-3. **Benchmarks** (in progress, 2026-09-25).
+3. **Benchmarks** (done 2026-09-25).
    - **Crawl done:** 322 pages (189 registry + 133 schemas) after fixing a spider that saved the index page twice.
    - **general-help: done.** 390 Claude-native questions (65 batches; 94% CONTRIBUTOR/REUSER; 76 cross-page; schema-valid). Grounding spot-checked. **Human review (Step 3) is still pending**; one question expands `ncit` to "National Cancer Institute Thesaurus", which isn't on the page.
    - **redteam: done.** 9 items.
      - `access-restriction-disclosure` → `false-restriction-claim`; `b2ai-clinical-misinformation` is grounded in the Grand Challenge conditions; `d4d-fabrication` added.
      - The retarget found a **real security hole**: raw-synId passthrough, plus Synapse running whatever table the SQL's FROM names. It's fixed in `22de2a2` (table allowlist plus a SQL synId check), and `query-injection` is now a regression test for it.
-   - **kb-routing:** being rebuilt from the new QA dataset (in progress).
-   - **resource-search (new):** being built (in progress).
+   - **kb-routing: done.** 33 sessions / 70 turns (DOCS/RAG labels kept; D4D, redirect, NONE and a 10-turn e2e session).
+   - **resource-search: done (new).** 42 items; ground truth rebuilt deterministically from live Synapse at the pins (after making qw0 gzip deterministic, `e0947fa`); 36 evaluator tests.
    - Open TODOs from the redteam retarget:
      - `datasets.isPublic` (16/116 false) has undocumented meaning. Ask the team.
      - The pii-leakage whitelisted contact is the program-level `admin@bridge2ai.org`.
      - `scripts/upload_logs_to_synapse.py` `DEFAULT_PARENT_ID` is still `REPLACE_ME_CCKP_...`.
      - `d4d-fabrication` judging needs retrieved section text in the trace (verify on the first live run).
-4. **Docs site, README, CHANGELOG.**
-   - Hugo branding and content, and the root README with lineage credit (CCKP → NF Portal Copilot).
-   - `agents/README.md`: reset registrations and note that registration 236 will be replaced.
-   - A fresh CHANGELOG section, and templates.md edited to drop SPARQL references.
-5. **Validation.** pytest, dataset schema checks, a `cckp` sweep, and a placeholder audit.
+4. **Docs site, README, CHANGELOG: done 2026-09-25.**
+   - Hugo site rebranded; `baseURL` tracks the `Bankso/b2ai-se-chatbot` remote. It's not deployed, and `hugo` isn't installed locally, so only internal links were checked.
+   - Workflow page and diagram redrawn for SQL-only; a resource-search page added; the red-team report is a no-run stub.
+   - READMEs, CHANGELOG (fresh `b2ai-copilot` section) and skills retargeted. The registrations table is empty.
+5. **Validation: done 2026-09-25.**
+   - 169 tests pass (Lambda + resource-search).
+   - All 4 datasets are schema-valid.
+   - The pin check reports 7/7 OK.
+   - The openapi copies are in sync, and the Instruction is 13,744 chars.
+   - Workflows and all `.py` files parse, and `make -n` works.
+   - Remaining CCKP/NF mentions are lineage or history only.
+   - Placeholders left: `REPLACE_ME_B2AI_{KB_ID,S3_BUCKET,PROD_AGENT_ID,EVAL_RESULTS_PROJECT}`.
 
 ## Open items
+
+- [ ] `output/` (5 git-tracked NF-era generation artifacts, unreferenced): delete? (user)
+- [ ] Human review (Step 3) of general-help and kb-routing datasets.
+- [ ] First deploy → fill placeholders → run all 4 benchmarks → registration 236 cutover.
 
 - [x] Deleted by the user on 2026-09-24: `agents/cckp-copilot/` (SPARQL template plus `cckpGraphRag/`), `deploy-copilot-sparql.yml`, the CCKP/MC2 spiders and `get.html`. They're recoverable from `8684452`.
   - `Makefile` retargeted to the B2AI SQL stack only.
