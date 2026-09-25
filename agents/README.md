@@ -40,15 +40,12 @@ Changes under `agents/b2ai-copilot/` trigger the deploy workflow in `.github/wor
 
 It supports:
 
-- **Manual dispatch** (`workflow_dispatch`) — deploys to the dev stack for testing. Trigger from any branch via the Actions UI or `gh workflow run deploy-copilot-sql.yml --ref my-branch`.
-- **Merge to main** — automatically deploys to the prod stack.
+- **Manual dispatch** (`workflow_dispatch`) with an `environment` input (`dev` default, or `prod`). Trigger from any branch via the Actions UI or `gh workflow run deploy-copilot-sql.yml --ref my-branch -f environment=dev`.
+- **Merge to main** — disabled for now (commented out in the workflow) until the OIDC role exists and a first manual deploy has succeeded.
 
-The workflow detects what changed and only runs the needed steps:
+Every run does the same three steps in order: upload the Lambda package to S3, deploy the stack (which creates the Lambda from that package on a first deploy), then push the code into the function (so code-only changes land even when the template is unchanged).
 
-- Lambda code only → uploads zip to S3 and updates the function in-place (no stack update)
-- Template/instructions/schema → runs `cloudformation deploy` on the stack
-
-AWS credentials use GitHub OIDC via an IAM role, stored as the `AWS_OIDC_ROLE_ARN` repo secret. **No such role has been provisioned yet for this repo** — an AWS admin needs to create one scoped to `b2ai-se-chatbot` before this workflow will succeed. The workflow's `S3_BUCKET` env var is currently the literal placeholder `b2ai-se-copilot` — replace it (and `LambdaS3Bucket`) with a real bucket name once one is provisioned.
+AWS credentials use GitHub OIDC via an IAM role, stored as the `AWS_OIDC_ROLE_ARN` repo secret. **No such role has been provisioned yet for this repo** — an AWS admin needs to create one scoped to `b2ai-se-chatbot` before this workflow will succeed. The workflow's `S3_BUCKET` (and the template's `LambdaS3Bucket` default) is `b2ai-se-copilot`.
 
 ## Local deploys (`Makefile`)
 
@@ -56,8 +53,8 @@ The repo root `Makefile` is a local equivalent of `deploy-copilot-sql.yml`, for 
 
 ```sh
 make check-aws                    # confirm local AWS credentials/identity
-make deploy-sql-dev               # update dev Lambda code + deploy the dev SQL stack
-make deploy-sql-dev-lambda        # update dev Lambda code only
+make deploy-sql-dev               # upload, deploy the dev stack, push code (use for a first deploy)
+make deploy-sql-dev-lambda        # upload + push dev Lambda code only (stack must already exist)
 make deploy-sql-dev-stack         # deploy the dev CloudFormation stack only
 make deploy-sql-prod              # same, against PRODUCTION (asks for confirmation)
 make deploy-sql-prod-lambda

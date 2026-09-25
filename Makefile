@@ -8,12 +8,10 @@
 # CloudFormation stacks. Run `make check-aws` first to confirm which
 # identity/account you're about to act as.
 #
-# The workflows use a git-diff check against the previous commit to decide
-# whether to update the Lambda code, the CloudFormation stack, or both —
-# that heuristic doesn't translate well to an ad hoc local run, so this
-# Makefile instead exposes `-lambda`, `-stack`, and a combined target for
-# environment; pick whichever matches what you actually
-# changed.
+# The combined deploy-sql-{dev,prod} targets run the same three steps as the
+# workflow: upload the package, deploy the stack (which creates the Lambda on
+# a first deploy), then push the code. The -lambda and -stack targets run a
+# subset when you know what changed; -lambda needs the stack to exist.
 #
 # SQL stack deploys don't take a Synapse token override: SynapseAuthToken
 # defaults to "" in the template, and `aws cloudformation deploy` reuses
@@ -32,6 +30,7 @@
 AWS_REGION ?= us-east-1
 FOUNDATION_MODEL_ID ?= anthropic.claude-sonnet-4-6
 S3_BUCKET ?= b2ai-se-copilot
+AWS_PROFILE ?= llmadmin
 
 AWS := aws --region $(AWS_REGION) $(if $(AWS_PROFILE),--profile $(AWS_PROFILE),)
 
@@ -51,16 +50,20 @@ CONFIRM_PROD = @echo "About to deploy to PRODUCTION ($(1)). Type 'yes' to contin
 
 .PHONY: help check-aws \
         deploy-sql-dev deploy-sql-dev-lambda deploy-sql-dev-stack \
-        deploy-sql-prod deploy-sql-prod-lambda deploy-sql-prod-stack
+        deploy-sql-dev-upload deploy-sql-dev-code \
+        deploy-sql-prod deploy-sql-prod-lambda deploy-sql-prod-stack \
+        deploy-sql-prod-upload deploy-sql-prod-code deploy-sql-prod-stack-unconfirmed
 
 help:
 	@echo "Local deploy targets for agents/b2ai-copilot (mirrors .github/workflows/deploy-copilot-sql.yml):"
 	@echo ""
 	@echo "  make check-aws                    confirm local AWS credentials/identity"
 	@echo ""
-	@echo "  make deploy-sql-dev               update dev Lambda code + deploy the dev SQL stack"
-	@echo "  make deploy-sql-dev-lambda        update dev Lambda code only"
+	@echo "  make deploy-sql-dev               upload package, deploy the dev stack, push the code"
+	@echo "                                    (use this for a first deploy -- it creates the Lambda)"
+	@echo "  make deploy-sql-dev-lambda        upload + push dev Lambda code only (stack must exist)"
 	@echo "  make deploy-sql-dev-stack         deploy the dev CloudFormation stack only"
+	@echo "                                    (expects the package already uploaded)"
 	@echo "  make deploy-sql-prod              same, against PRODUCTION (asks for confirmation)"
 	@echo "  make deploy-sql-prod-lambda"
 	@echo "  make deploy-sql-prod-stack"
@@ -75,11 +78,20 @@ check-aws:
 # SQL backend
 # ---------------------------------------------------------------------------
 
-deploy-sql-dev: deploy-sql-dev-lambda deploy-sql-dev-stack
+# A full deploy uploads the package, then deploys the stack (which creates the
+# Lambda from that package on a first deploy), then pushes the code into the
+# function (so a code-only change still lands when the stack is unchanged).
+# The -lambda targets only work once the stack -- and so the function -- exists.
 
-deploy-sql-dev-lambda:
+deploy-sql-dev: deploy-sql-dev-upload deploy-sql-dev-stack deploy-sql-dev-code
+
+deploy-sql-dev-lambda: deploy-sql-dev-upload deploy-sql-dev-code
+
+deploy-sql-dev-upload:
 	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/b2aiSqlRag.zip lambda_function.py
 	$(AWS) s3 cp /tmp/b2aiSqlRag.zip "s3://$(S3_BUCKET)/lambda/b2aiSqlRag-dev.zip"
+
+deploy-sql-dev-code:
 	$(AWS) lambda update-function-code \
 		--function-name $(SQL_LAMBDA_FN_DEV) \
 		--s3-bucket $(S3_BUCKET) \
@@ -98,19 +110,29 @@ deploy-sql-dev-stack:
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-fail-on-empty-changeset
 
-deploy-sql-prod: deploy-sql-prod-lambda deploy-sql-prod-stack
+deploy-sql-prod:
+	$(call CONFIRM_PROD,SQL Lambda + stack)
+	$(MAKE) --no-print-directory deploy-sql-prod-upload deploy-sql-prod-stack-unconfirmed deploy-sql-prod-code
 
 deploy-sql-prod-lambda:
 	$(call CONFIRM_PROD,SQL Lambda)
+	$(MAKE) --no-print-directory deploy-sql-prod-upload deploy-sql-prod-code
+
+deploy-sql-prod-stack:
+	$(call CONFIRM_PROD,SQL stack)
+	$(MAKE) --no-print-directory deploy-sql-prod-stack-unconfirmed
+
+deploy-sql-prod-upload:
 	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/b2aiSqlRag.zip lambda_function.py
 	$(AWS) s3 cp /tmp/b2aiSqlRag.zip "s3://$(S3_BUCKET)/lambda/b2aiSqlRag.zip"
+
+deploy-sql-prod-code:
 	$(AWS) lambda update-function-code \
 		--function-name $(SQL_LAMBDA_FN_PROD) \
 		--s3-bucket $(S3_BUCKET) \
 		--s3-key lambda/b2aiSqlRag.zip
 
-deploy-sql-prod-stack:
-	$(call CONFIRM_PROD,SQL stack)
+deploy-sql-prod-stack-unconfirmed:
 	$(AWS) cloudformation deploy \
 		--template-file $(SQL_TEMPLATE) \
 		--stack-name $(SQL_STACK_NAME_PROD) \

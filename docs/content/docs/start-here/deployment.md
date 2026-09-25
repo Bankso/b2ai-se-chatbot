@@ -20,10 +20,7 @@ The workflow is: make changes on a branch → manually trigger the `deploy-copil
 
 ## CI/CD setup
 
-`.github/workflows/deploy-copilot-sql.yml` handles deployments. It's smart about what changed:
-
-- Lambda code only (`agents/b2ai-copilot/lambda/b2aiSqlRag/lambda_function.py`) → uploads zip and calls `update-function-code` directly (no stack update needed)
-- Template/instructions/schema (`agents/b2ai-copilot/cloudformation.sql.yaml`) → runs `cloudformation deploy`
+`.github/workflows/deploy-copilot-sql.yml` handles deployments. It runs manually (`workflow_dispatch`, with an `environment` input of `dev` or `prod`); the push-to-main trigger is disabled until a first deploy has succeeded. Every run does three steps in order: upload the Lambda package to S3, deploy the stack (which creates the Lambda from that package on a first deploy), then push the code into the function (so code-only changes land even when the template is unchanged). The stack deploy passes `--s3-bucket` because the template is larger than CloudFormation's 51,200-byte inline limit.
 
 **CI/CD is optional to get started** — you can deploy manually with `aws cloudformation deploy` first and set this up later.
 
@@ -43,8 +40,8 @@ The workflow also needs an S3 bucket for the Lambda deployment package — `depl
 ```bash
 make check-aws              # confirm local AWS credentials/identity
 
-make deploy-sql-dev         # update dev Lambda code + deploy the dev stack
-make deploy-sql-dev-lambda  # update dev Lambda code only
+make deploy-sql-dev         # upload, deploy the dev stack, push code (use for a first deploy)
+make deploy-sql-dev-lambda  # upload + push dev Lambda code only (stack must already exist)
 make deploy-sql-dev-stack   # deploy the dev CloudFormation stack only
 
 make deploy-sql-prod        # same, against PRODUCTION (asks for confirmation)

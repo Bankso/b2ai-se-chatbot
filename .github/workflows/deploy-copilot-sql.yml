@@ -37,8 +37,6 @@ jobs:
       S3_BUCKET: b2ai-se-copilot
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
       - name: Guard placeholders
         run: |
@@ -68,38 +66,24 @@ jobs:
             echo "S3_KEY=lambda/b2aiSqlRag-dev.zip" >> "$GITHUB_ENV"
           fi
 
-      - name: Detect what changed
-        id: changes
-        run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD)
-          if echo "$CHANGED" | grep -q "$LAMBDA_DIR/lambda_function.py"; then
-            echo "lambda=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "lambda=false" >> "$GITHUB_OUTPUT"
-          fi
-          if echo "$CHANGED" | grep "agents/b2ai-copilot/" | grep -qv "$LAMBDA_DIR/lambda_function.py"; then
-            echo "stack=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "stack=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Update Lambda code
-        if: steps.changes.outputs.lambda == 'true'
+      # Manual (workflow_dispatch) deploys always run all three steps, in this
+      # order: the stack creates the Lambda from the uploaded package on a
+      # first deploy, and the final code push lands code-only changes when
+      # the template itself is unchanged.
+      - name: Upload Lambda package
         run: |
           cd "$LAMBDA_DIR"
           zip /tmp/b2aiSqlRag.zip lambda_function.py
           aws s3 cp /tmp/b2aiSqlRag.zip "s3://${S3_BUCKET}/${S3_KEY}"
-          aws lambda update-function-code \
-            --function-name "$LAMBDA_FN" \
-            --s3-bucket "$S3_BUCKET" \
-            --s3-key "$S3_KEY"
 
       - name: Deploy stack
-        if: steps.changes.outputs.stack == 'true'
         run: |
+          # --s3-bucket is required: the template exceeds CloudFormation's
+          # 51,200-byte inline template limit.
           aws cloudformation deploy \
             --template-file "$TEMPLATE" \
             --stack-name "$STACK_NAME" \
+            --s3-bucket "$S3_BUCKET" \
             --parameter-overrides \
                 AgentName="$AGENT_NAME" \
                 FoundationModelId="anthropic.claude-haiku-4-5-20251001-v1:0" \
@@ -108,3 +92,10 @@ jobs:
                 LambdaS3Key="$S3_KEY" \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
+
+      - name: Update Lambda code
+        run: |
+          aws lambda update-function-code \
+            --function-name "$LAMBDA_FN" \
+            --s3-bucket "$S3_BUCKET" \
+            --s3-key "$S3_KEY"
