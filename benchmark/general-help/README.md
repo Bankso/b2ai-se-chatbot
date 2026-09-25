@@ -1,14 +1,14 @@
 # General Help Benchmark
 
-This benchmark is used for quality assurance of a deployed CCKP Copilot. Multiple-choice questions are synthetically generated from the CCKP's documentation sources, then validated by human reviewers before being used for evaluation.
+This benchmark is used for quality assurance of a deployed Bridge2AI Standards Explorer Copilot. Multiple-choice questions are synthetically generated from the Standards Registry and standards-schemas documentation, then validated by human reviewers before being used for evaluation.
 
-> **Status:** this benchmark was forked from the NF Portal Copilot's general-help benchmark. The NF-specific dataset (`help_qa_dataset_anthropic.json`), eval results, and `reviewer_notes.yml` have been removed — they encoded NF Data Portal policy answers (licensing, embargo, file-size limits) that do not apply to CCKP and would be actively misleading if kept. Regenerate them from a real crawl of CCKP's docs (Steps 1–3 below) before running an eval.
+> **Lineage:** forked from the NF Portal Copilot's general-help benchmark via the CCKP Copilot; each portal's dataset was regenerated from its own docs rather than carried over.
 
 ---
 
 ## Step 1: Crawl the docs sources
 
-> **B2AI retarget in progress.** The CCKP/MC2 spiders were removed (recoverable from git history). The committed `help_qa_dataset_*.json` is still CCKP-derived until it is regenerated from a B2AI crawl.
+> **Status:** `help_qa_dataset_anthropic.json` was regenerated on 2026-09-25 (Claude-native mode) from a 323-page crawl of both B2AI sources: 390 questions, not yet human-reviewed (Step 3). The CCKP/MC2 spiders were removed (recoverable from git history).
 
 All spiders write into the same `output_markdown/` (git-ignored), with filenames prefixed by source so they don't collide.
 
@@ -147,7 +147,7 @@ cd benchmark/general-help
 python evaluate_bedrock_agent.py
 ```
 
-`--agent-id` is required — default is the CCCKP dev agent
+`--agent-id` is required — no B2AI agent is deployed yet, so there is no default
 
 ```bash
 python evaluate_bedrock_agent.py \
@@ -164,7 +164,7 @@ The default alias `TSTALIASID` always points to the DRAFT version. If you've upd
 
 | Flag | Default | Description |
 |---|---|---|
-| `--agent-id` | _(required)_ | Bedrock Agent ID — no CCKP agent is deployed yet |
+| `--agent-id` | _(required)_ | Bedrock Agent ID — no B2AI agent is deployed yet |
 | `--alias-id` | `TSTALIASID` | Bedrock Agent alias ID |
 | `--profile` | `default` | AWS profile from `~/.aws/credentials` |
 | `--region` | `us-east-1` | AWS region |

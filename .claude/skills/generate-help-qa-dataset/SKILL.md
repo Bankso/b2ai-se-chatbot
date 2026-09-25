@@ -1,6 +1,6 @@
 ---
 name: generate-help-qa-dataset
-description: Generate (or extend) the CCKP general-help benchmark's synthetic multiple-choice QA dataset — Step 2 of benchmark/general-help/README.md — from crawled docs markdown, matching generate_dataset.py's schema/batching exactly. Supports a Claude-native mode that needs no OpenAI/Anthropic API key (Claude itself generates the questions inline) as well as the original scripted OpenAI/Anthropic API path. Use when the user asks to generate/regenerate the help QA dataset, run "step 2" of the general-help benchmark, add questions for a new/updated doc page, or create synthetic benchmark questions from the crawled CCKP/MC2 docs — including when they have no API key and want Claude Code to do the generation itself.
+description: Generate (or extend) the general-help benchmark's synthetic multiple-choice QA dataset — Step 2 of benchmark/general-help/README.md — from crawled docs markdown, matching generate_dataset.py's schema/batching exactly. Supports a Claude-native mode that needs no OpenAI/Anthropic API key (Claude itself generates the questions inline) as well as the original scripted OpenAI/Anthropic API path. Use when the user asks to generate/regenerate the help QA dataset, run "step 2" of the general-help benchmark, add questions for a new/updated doc page, or create synthetic benchmark questions from the crawled portal docs — including when they have no API key and want Claude Code to do the generation itself.
 ---
 
 You turn crawled documentation markdown into a synthetic multiple-choice QA dataset (`help_qa_dataset_<provider>.json`) matching `qa_schema.json` exactly. This is Step 2 of the general-help benchmark pipeline — it sits between the docs crawl (Step 1) and human review (Step 3), so treat it as one link in that chain, not an isolated task.
@@ -24,7 +24,7 @@ Read `benchmark/general-help/README.md` in full before running anything — it i
 
 1. **Locate the working directory.** Find the repo root with `git rev-parse --show-toplevel` if you aren't already there, then `cd <root>/benchmark/general-help`. Don't hardcode an absolute path; this skill must work from any clone.
 
-2. **Verify Step 1 is done.** Check that `output_markdown/` exists and contains `.md` files (`ls output_markdown/*.md | wc -l`). If it's empty or missing, stop and tell the user to run the crawl spiders first (`scrapy runspider cckpdocs_spider.py` and `scrapy runspider mc2datamodelsdocs_spider.py`) — don't attempt to crawl yourself as part of this skill.
+2. **Verify Step 1 is done.** Check that `output_markdown/` exists and contains `.md` files (`ls output_markdown/*.md | wc -l`). If it's empty or missing, stop and tell the user to run the crawl spiders listed in the README's Step 1 first (currently `scrapy runspider b2ai_registry_docs_spider.py` and `scrapy runspider b2ai_schemas_docs_spider.py`) — don't attempt to crawl yourself as part of this skill.
 
 3. **Check dependencies.** `generate_dataset.py` imports `openai`, `anthropic`, and `tiktoken` at module level — even Claude-native mode needs these importable, since it imports the script's pure helper functions:
    ```bash
