@@ -45,6 +45,7 @@ class B2AISchemasDocsSpider(scrapy.Spider):
             OUTPUT_DIR_ENV, "output_markdown"
         )
         self._seen_filenames = set()
+        self._seen_urls = set()
 
     def _in_scope(self, url):
         if not url.startswith(self.BASE_URL):
@@ -67,6 +68,13 @@ class B2AISchemasDocsSpider(scrapy.Spider):
         return title or None
 
     def parse(self, response):
+        # Start requests bypass Scrapy's dupefilter, so the index page is
+        # fetched a second time when other pages link back to it; skip any
+        # page already saved.
+        page_url = response.url.split("#", 1)[0].rstrip("/")
+        if page_url in self._seen_urls:
+            return
+        self._seen_urls.add(page_url)
         raw_title = response.xpath("//title/text()").get()
         title = self._sanitize_title(raw_title)
         path_slug = self._slugify_path(response.url)
