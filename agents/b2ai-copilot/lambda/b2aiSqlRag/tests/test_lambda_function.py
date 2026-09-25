@@ -1165,3 +1165,8 @@ class TestSqlTableAllowlist:
         result, run = self._run("SELECT * FROM {table} WHERE description LIKE '%syn123%'")
         assert "error" not in result
         run.assert_called_once()
+
+
+def test_facet_url_is_deterministic():
+    params = {"resourceType": "search", "facets": [{"columnName": "topic", "values": ["Image"]}]}
+    assert build_portal_url(params) == build_portal_url(params)

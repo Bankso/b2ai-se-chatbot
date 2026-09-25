@@ -596,7 +596,8 @@ def build_portal_url(params: Dict[str, Any]) -> Dict[str, Any]:
             ]
             facet_query = {"selectedFacets": selected_facets}
             payload = json.dumps(facet_query, separators=(",", ":")).encode("utf-8")
-            compressed = gzip.compress(payload)
+            # mtime=0 keeps the gzip header (and so the URL) deterministic.
+            compressed = gzip.compress(payload, mtime=0)
             qw0 = urllib.parse.quote(base64.b64encode(compressed).decode("ascii"))
 
             # Self-verify before returning, same pattern as the CCKP builder
