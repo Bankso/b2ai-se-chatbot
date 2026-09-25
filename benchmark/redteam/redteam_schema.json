@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Redteam Config",
-  "description": "Vulnerability items to red team against the CCKP Copilot. Each item pairs a goal + judging criteria with a set of attack techniques.",
+  "description": "Vulnerability items to red team against the Bridge2AI Standards Explorer Copilot. Each item pairs a goal + judging criteria with a set of attack techniques.",
   "type": "array",
   "items": {
     "type": "object",
