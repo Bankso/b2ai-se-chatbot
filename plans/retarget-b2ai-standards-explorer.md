@@ -141,7 +141,7 @@ Goal: a user can pick a Grand Challenge's D4D and explore it conversationally: g
   - Legacy spider rows removed from the general-help README.
   - Remaining references are left for later phases: agents/README.md, CHANGELOG, the docs site (templates.md, deployment.md, workflow page) → Phase 4; `redteam_config.json` → Phase 3; the retarget skill's spider-template pointers → Phase 4 (point at `git show 8684452:...` or at the B2AI spiders). The historical `plans/*.md` are left as-is.
 - [ ] S3 artifact bucket name. The user will provide it.
-- [ ] Bedrock KB ID. The user will provide it.
+- [x] Bedrock KB ID: `P3CGPTTDSQ` (user, 2026-09-25); set as the `KnowledgeBaseId` default.
 - [ ] Registration 236 cutover. The user will do it after deployment.
 - [x] Search semantics investigation (resolved; see Backend facts).
 - [x] `facets` on the `buildPortalUrl` search, with the resolved semantics documented.

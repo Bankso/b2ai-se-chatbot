@@ -17,5 +17,6 @@ The CCKP Copilot's full release history (forked from `nf-osi/portal-chatbot`, tw
 - Prompt (Instruction) rewritten for the Bridge2AI Standards Explorer's entities and the D4D sub-routine.
 - Docs KB re-crawled from two B2AI sources (Bridge2AI Standards Registry docs and standards-schemas LinkML docs) with new spiders, replacing the CCKP help site + MC2 Center data model spiders.
 - All four PHD benchmarks (`general-help`, `kb-routing`, `redteam`, and the new `resource-search`) retargeted or rebuilt for the Bridge2AI Standards Explorer's real entities, backend, and D4D sub-routine; see each benchmark's own README for status and coverage.
-- Synapse registrations reset to empty (see `agents/README.md`) — no B2AI stack has been deployed yet. Placeholders introduced: `REPLACE_ME_B2AI_KB_ID`, `REPLACE_ME_B2AI_S3_BUCKET`, `REPLACE_ME_B2AI_EVAL_RESULTS_PROJECT`, `REPLACE_ME_B2AI_PROD_AGENT_ID`.
-- Open: KB ID, S3 bucket, first deploy, and the registration-236 cutover — see `agents/README.md`'s "Open items".
+- Synapse registrations reset to empty (see `agents/README.md`) — no B2AI stack has been deployed yet. Placeholders introduced: `REPLACE_ME_B2AI_S3_BUCKET`, `REPLACE_ME_B2AI_EVAL_RESULTS_PROJECT`, `REPLACE_ME_B2AI_PROD_AGENT_ID`.
+- Docs KB attached: `KnowledgeBaseId` defaults to `P3CGPTTDSQ`.
+- Open: S3 bucket, first deploy, and the registration-236 cutover — see `agents/README.md`'s "Open items".

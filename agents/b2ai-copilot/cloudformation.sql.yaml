@@ -17,10 +17,10 @@
 #   Instruction      – The agent system prompt is embedded inline in the
 #                       BedrockAgent resource below.  Replace the entire
 #                       block with your own instructions.
-#   KnowledgeBaseId  – A placeholder (REPLACE_ME_B2AI_KB_ID) until a real
-#                       B2AI docs KB is provisioned.  Replace with your own,
-#                       or remove the KnowledgeBases block and the
-#                       RetrieveFromKB policy entirely if you have no KB.
+#   KnowledgeBaseId  – The B2AI docs KB (P3CGPTTDSQ).  Override the parameter
+#                       to attach a different KB, or remove the
+#                       KnowledgeBases block and the RetrieveFromKB policy
+#                       entirely if you have no KB.
 #
 # Parameters to supply:
 #
@@ -68,11 +68,10 @@
 #
 #   OpenAPI schema – Edit the ApiSchema Payload in this file and redeploy.
 #
-#   Knowledge bases – The template ships with a placeholder B2AI KB ID.
-#       Do NOT keep it unless you have provisioned a real B2AI docs KB.
-#       Remove the KnowledgeBases block and the RetrieveFromKB policy
-#       if you have no KB, or replace the KB ID in both places with
-#       your own.  KBs are created outside this template (via console,
+#   Knowledge bases – The template defaults to the B2AI docs KB (P3CGPTTDSQ).
+#       The RetrieveFromKB policy derives its ARN from the KnowledgeBaseId
+#       parameter, so overriding the parameter is enough to swap KBs.
+#       Remove the KnowledgeBases block and the policy if you have no KB.  KBs are created outside this template (via console,
 #       CLI, or a separate stack) because they involve their own vector
 #       store, embedding model, data sources, and sync schedule.
 #
@@ -132,14 +131,12 @@ Parameters:
 
   KnowledgeBaseId:
     Type: String
-    Default: REPLACE_ME_B2AI_KB_ID
+    Default: P3CGPTTDSQ
     Description: >
       ID of a Bedrock Knowledge Base to attach (created separately), built
       from a crawl of the Bridge2AI Standards Registry docs
       (bridge2ai.github.io/b2ai-standards-registry) and the LinkML schema
-      docs (bridge2ai.github.io/standards-schemas). Not yet provisioned —
-      replace with a real KB ID once one exists, or set to empty string to
-      skip.
+      docs (bridge2ai.github.io/standards-schemas).
 
   LambdaS3Bucket:
     Type: String

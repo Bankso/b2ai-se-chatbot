@@ -108,7 +108,7 @@ To learn more about the Synapse Custom Agent framework, refer to [this internal 
 
 ## Open items
 
-- **KB ID.** `KnowledgeBaseId` in `cloudformation.sql.yaml` is still the placeholder `REPLACE_ME_B2AI_KB_ID` — no Bedrock Knowledge Base has been built yet from the crawled docs.
+- **KB ID: done.** `KnowledgeBaseId` defaults to the B2AI docs KB `P3CGPTTDSQ` (provided 2026-09-25).
 - **S3 artifact bucket.** `REPLACE_ME_B2AI_S3_BUCKET` (this file, the `Makefile`, and `deploy-copilot-sql.yml`) is not yet a real bucket. The user will provide a name.
 - **First deploy.** No `b2ai-copilot-sql-{dev,prod}` stack has ever been deployed; the `AWS_OIDC_ROLE_ARN` repo secret also needs to be provisioned before CI can deploy.
 - **Registration 236 cutover.** The live portal's `synapseChatConfig.ts` currently points at agent registration 236 ("Bridge2AI Standards Portal Assistant"). The new prod agent from this repo is intended to *replace* it, but that cutover has **not** happened — the user will make the `synapseChatConfig.ts` change themselves after this repo's agent is deployed and verified.

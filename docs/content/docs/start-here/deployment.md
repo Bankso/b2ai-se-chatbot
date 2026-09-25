@@ -58,7 +58,7 @@ Optional overrides: `AWS_PROFILE`, `AWS_REGION`, `FOUNDATION_MODEL_ID`, `S3_BUCK
 
 KBs are created and managed separately from the agent template — they have their own vector store, embedding model, data sources, and sync schedule. Create yours via the console or CLI, then pass the ID as the `KnowledgeBaseId` template parameter.
 
-The Bridge2AI Standards Explorer Copilot's docs KB should be built from a crawl of both the [Bridge2AI Standards Registry docs](https://bridge2ai.github.io/b2ai-standards-registry/) and the [LinkML `standards-schemas` docs](https://bridge2ai.github.io/standards-schemas/) — see `benchmark/general-help/README.md` for the two spiders (`b2ai_registry_docs_spider.py`, `b2ai_schemas_docs_spider.py`) that crawl each source. No such KB has been built yet. The template ships with a `REPLACE_ME_B2AI_KB_ID` placeholder until one exists.
+The Bridge2AI Standards Explorer Copilot's docs KB should be built from a crawl of both the [Bridge2AI Standards Registry docs](https://bridge2ai.github.io/b2ai-standards-registry/) and the [LinkML `standards-schemas` docs](https://bridge2ai.github.io/standards-schemas/) — see `benchmark/general-help/README.md` for the two spiders (`b2ai_registry_docs_spider.py`, `b2ai_schemas_docs_spider.py`) that crawl each source. That KB is `P3CGPTTDSQ`, the template's `KnowledgeBaseId` default.
 
 ## Agent registration with Synapse
 

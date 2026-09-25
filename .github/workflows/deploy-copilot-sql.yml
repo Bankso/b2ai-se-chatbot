@@ -11,11 +11,10 @@ on:
           - dev
           - prod
   # The push-to-main (prod) trigger is intentionally disabled for now: this
-  # stack's S3_BUCKET/LambdaS3Bucket and the cloudformation template's
-  # KnowledgeBaseId are still REPLACE_ME placeholders (see the "Guard"
+  # stack's S3_BUCKET/LambdaS3Bucket are still REPLACE_ME placeholders (see the "Guard"
   # step below and agents/b2ai-copilot/cloudformation.sql.yaml), so a merge
   # to main would trigger this workflow and immediately fail red on every
-  # PR that touches the copilot -- there's no bucket/KB to deploy to yet.
+  # PR that touches the copilot -- there's no bucket to deploy to yet.
   # Re-enable it once those placeholders are filled in with real values:
   #
   # push:
