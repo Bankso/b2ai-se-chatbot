@@ -5,68 +5,65 @@ weight: 30
 
 # Templates
 
-CCKP Copilot ships **two** CloudFormation templates for two different backends — pick the one that fits (see [Choosing a backend](#choosing-a-backend) below), or use them as a reference for your own portal.
+The Bridge2AI Standards Explorer Copilot ships **one** CloudFormation template, for its one deployable backend — use it as-is, or as a reference for your own portal.
 
-### CloudFormation templates
+> **SPARQL variant removed.** An earlier configuration of this repo (for the Cancer Complexity Knowledge Portal) also shipped a SPARQL/knowledge-graph template and Lambda (`cckpGraphRag`). The Bridge2AI Standards Explorer has **no knowledge-graph backend** — its data lives in Synapse denormalized tables, queried via SQL — so that variant was removed rather than ported. It's recoverable from git history at commit `8684452` if a future portal needs the pattern.
 
-Both deploy the full stack: IAM roles, Lambda function, Bedrock Agent with action group, knowledge base attachment, and agent alias. See the usage comments at the top of each template for what to replace.
+### CloudFormation template
 
-- **`agents/cckp-copilot/cloudformation.sql.yaml`** — SQL action group over Synapse View tables. Deployable today, no new infrastructure.
-- **`agents/cckp-copilot/cloudformation.sparql.yaml`** — SPARQL action group over a knowledge graph. Not deployable yet — requires a hosted SPARQL endpoint serving `mc2-center/data-models/kg-pipeline`'s output, which doesn't exist.
+`agents/b2ai-copilot/cloudformation.sql.yaml` deploys the full stack: IAM roles, Lambda function, Bedrock Agent with action group, knowledge base attachment, and agent alias. See the usage comments at the top of the template for what to replace.
 
-Key things to change for your portal:
+Key things to change for your own portal:
 - **`Instruction`** — the system prompt, embedded inline. Replace with your agent's instructions.
-- **`KnowledgeBaseId`** — a placeholder (`REPLACE_ME_CCKP_KB_ID`) until a real CCKP docs KB is provisioned. Replace with your own or remove the block entirely.
-- **`SynapseAuthToken`** (SQL template) / **`SparqlEndpoint`** (SPARQL template) — the resource backend to query.
-- **`FoundationModelId`** — defaults to Claude Haiku 4.5; change as needed.
+- **`KnowledgeBaseId`** — a placeholder (`REPLACE_ME_B2AI_KB_ID`) until a real Bridge2AI Standards Explorer docs KB is provisioned (built from a crawl of the Bridge2AI Standards Registry docs and the LinkML `standards-schemas` docs — see [Deployment](/docs/start-here/deployment/)). Replace with your own or remove the block entirely.
+- **`LambdaS3Bucket`** — a placeholder (`REPLACE_ME_B2AI_S3_BUCKET`) until an S3 bucket for the Lambda deployment package is provisioned.
+- **`SynapseAuthToken`** — optional. Every table in `TABLES` is an open-access `TableEntity`, queryable anonymously, so this can be left blank; only set it if a future table requires authentication.
+- **`FoundationModelId`** — defaults to a Claude Sonnet cross-region inference profile; change as needed.
 
 Deploy with:
 
 ```bash
 aws cloudformation deploy \
-  --template-file agents/cckp-copilot/cloudformation.sql.yaml \
-  --stack-name my-portal-copilot-dev \
+  --template-file agents/b2ai-copilot/cloudformation.sql.yaml \
+  --stack-name b2ai-copilot-sql-dev \
   --parameter-overrides \
-      AgentName=my-portal-copilot-dev \
-      SynapseAuthToken=my-token \
+      AgentName=b2ai-copilot-sql-dev \
       LambdaS3Bucket=my-bucket \
-      LambdaS3Key=lambda/my-function.zip \
+      LambdaS3Key=lambda/b2aiSqlRag-dev.zip \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
-### Choosing a backend
+Or use the Makefile targets, which wrap the same commands for a local deploy (see [Deployment](/docs/start-here/deployment/#local-deploys-with-make)):
 
-| | SQL (`cckpSqlRag`) | SPARQL (`cckpGraphRag`) |
-|---|---|---|
-| Infrastructure needed | None — queries live Synapse tables directly | A hosted triple store serving kg-pipeline's RDF output |
-| Matches deployed schema | Exactly (queries the real tables) | Only as current as the last kg-pipeline sync |
-| Cross-entity joins | One `sqlQuery` call per table, joined client-side | Native graph traversal in one query |
-| Publication full-text search | Not available | Not available (CCKP has no indexed full-text; unlike some other portal copilots) |
-| Status | Recommended, deployable now | Kept for when a hosted endpoint exists |
+```bash
+make deploy-sql-dev      # dev Lambda + stack
+make deploy-sql-prod     # prod Lambda + stack (asks for confirmation)
+```
 
-### Lambda functions
+The stacks are named `b2ai-copilot-sql-dev` and `b2ai-copilot-sql-prod`.
 
-`agents/cckp-copilot/lambda/cckpSqlRag/lambda_function.py` exposes six operations for the SQL backend — three for querying the curated tables, three for dataset & file discovery against the wider Synapse REST API:
+### Lambda function
+
+`agents/b2ai-copilot/lambda/b2aiSqlRag/lambda_function.py` exposes seven operations (see its `openapi.yaml` for the full action-group interface):
 
 | Function | Purpose |
 |---|---|
-| `sqlQuery` | Run SQL against one named table (datasets, publications, tools, grants, education, or a raw synId) |
+| `sqlQuery` | Run SQL against one named table (`standards`, `datasets`, `organizations`, `topics`, `substrates`, `manifest`, `d4d`), or a synId belonging to one of those tables |
 | `getColumns` | List a table's exact deployed column names |
-| `countByType` | Row counts across all 5 tables |
-| `getDatasetFiles` | List the file contents of a dataset's underlying Synapse entity (a first-class Dataset's item list, or a Folder/Project's children) |
-| `getFileDetails` | Get a specific file's real name/size/type/checksum |
-| `checkRestriction` | Check whether datasets/files are actually publicly accessible before offering them for download |
+| `countByType` | Row counts across all 7 tables |
+| `buildPortalUrl` | Build a portal path for a Standard/Organization/DataTopic Detail Page, or the Standards search tab (with optional `searchTerm`/`facets`) |
+| `listD4Ds` | List the 4 Bridge2AI Grand Challenge orgs that have a D4D (Datasheet for Dataset) |
+| `getD4D` | Get a Grand Challenge's D4D outline, or one section's text (paged) |
+| `searchD4D` | Keyword search across one or all D4Ds |
 
-`agents/cckp-copilot/lambda/cckpGraphRag/lambda_function.py` exposes four operations for the SPARQL backend (only usable once a hosted endpoint exists):
+#### The table allowlist and version pinning
 
-| Function | Purpose |
-|---|---|
-| `sparqlQuery` | Run arbitrary SPARQL |
-| `getSchema` | List ontology classes and properties |
-| `getShape` | SHACL constraints for a class |
-| `countByType` | Quick RDF type inventory |
+`TABLES` maps each alias to a **pinned** synId (e.g. `"standards": "syn65676531.99"`), matching the exact versions the live portal queries (`Sage-Bionetworks/synapse-web-monorepo`'s `apps/portals/b2ai.standards/src/config/resources.ts`), so the copilot's answers match what a Detail Page currently shows. `sqlQuery`/`getColumns` accept only an alias or a bare synId that belongs to `TABLES`, always resolved to its pinned version — a query naming any other table or an unpinned version is rejected. This closed a real security hole found during the retarget (raw-synId passthrough; see `benchmark/redteam/redteam_config.json`'s `query-injection` item).
 
-To reuse either for your own portal:
-- SQL: point `SYNAPSE_AUTH_TOKEN` at a valid Synapse Personal Access Token and update the `TABLES` alias map to your own View table synIds.
-- SPARQL: point `SPARQL_ENDPOINT` at your own endpoint; if it requires auth, set `SPARQL_AUTH_TOKEN`.
-- Each Lambda's `openapi.yaml` defines its action group interface and can be used as-is.
+Run `scripts/check_table_pins.py` to diff `TABLES` against the live `resources.ts` on the monorepo's `main` and re-pin by hand if the portal has bumped a version:
+
+```bash
+python3 scripts/check_table_pins.py
+```
+
+To reuse this Lambda for your own portal: point `SYNAPSE_AUTH_TOKEN` at a valid Synapse Personal Access Token (if any of your tables need it) and update `TABLES` to your own table synIds (pinned or not, depending on whether your source data is versioned the same way). `openapi.yaml` defines the action group interface and can be used as-is if your operation names match, or adapted otherwise.
