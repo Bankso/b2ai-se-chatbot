@@ -1,7 +1,7 @@
 # Retarget: CCKP Copilot → Bridge2AI Standards Explorer Copilot
 
 Portal: https://b2ai.standards.synapse.org/. Slug `b2ai`, stack/agent/Lambda prefix `b2ai-copilot`. The user-facing name is **Bridge2AI Standards Explorer Copilot**.
-Driven by `.claude/skills/retarget-portal-chatbot/SKILL.md`. Branch `b2ai-conversion`.
+Driven by the retarget-portal-chatbot skill, removed after the retarget (`git show 9831198:.claude/skills/retarget-portal-chatbot/SKILL.md`). Branch `b2ai-conversion`.
 
 ## Intake (confirmed 2026-09-24)
 
@@ -131,7 +131,8 @@ Goal: a user can pick a Grand Challenge's D4D and explore it conversationally: g
 
 ## Open items
 
-- [ ] `output/` (5 git-tracked NF-era generation artifacts, unreferenced): delete? (user)
+- [x] Removed files not tied to the B2AI Copilot (2026-09-25): `output/` (NF-era artifacts), 10 CCKP-era `plans/*.md`, `.vscode/`, the tracked Hugo build output `docs/public/favicon.svg`, and the retarget-portal-chatbot skill. All recoverable from `9831198`.
+
 - [ ] Human review (Step 3) of general-help and kb-routing datasets.
 - [ ] First deploy → fill placeholders → run all 4 benchmarks → registration 236 cutover.
 
