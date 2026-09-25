@@ -8,6 +8,7 @@ import gzip
 import json
 import os
 import socket
+import time
 import urllib.error
 import urllib.parse
 from unittest.mock import patch
@@ -17,11 +18,15 @@ import pytest
 import lambda_function
 from lambda_function import (
     _bare_id,
+    _check_sql_tables,
     _coerce_property_value,
     _make_response,
+    _parse_bedrock_pseudo_json,
     _parse_bundle,
     _parse_d4d_document,
     _resolve_table,
+    _sql_strip_string_literals,
+    _SqlScanError,
     build_portal_url,
     extract_params,
     get_d4d,
@@ -30,6 +35,7 @@ from lambda_function import (
     search_d4d,
     GC_ORG_IDS,
     PORTAL_ROUTES,
+    QUERY_TIMEOUT,
     TABLES,
 )
 
@@ -189,6 +195,60 @@ class TestCoercePropertyValue:
         # caller's own validation produce a clear error instead of guessing.
         assert _coerce_property_value("array", "not a list at all") == "not a list at all"
 
+    def test_facets_pseudo_json_object_with_nested_array(self):
+        # Regression: Bedrock can send `facets` as
+        # "[{columnName=topic, values=[Image, Genome]}]" -- bare key=value
+        # pairs, not valid JSON. The naive comma-split fallback used to
+        # shred this into unusable string fragments.
+        value = "[{columnName=topic, values=[Image, Genome]}]"
+        assert _coerce_property_value("array", value) == [
+            {"columnName": "topic", "values": ["Image", "Genome"]}
+        ]
+
+    def test_facets_pseudo_json_multiple_facets(self):
+        value = (
+            "[{columnName=topic, values=[Image]}, "
+            "{columnName=category, values=[Ontology or Vocabulary]}]"
+        )
+        assert _coerce_property_value("array", value) == [
+            {"columnName": "topic", "values": ["Image"]},
+            {"columnName": "category", "values": ["Ontology or Vocabulary"]},
+        ]
+
+    def test_plain_list_pseudo_json_still_works(self):
+        assert _coerce_property_value("array", "[FHIR, HL7 CDA]") == ["FHIR", "HL7 CDA"]
+
+    def test_pseudo_json_value_with_spaces(self):
+        assert _coerce_property_value("array", "[data model, ontology]") == [
+            "data model",
+            "ontology",
+        ]
+
+
+class TestParseBedrockPseudoJson:
+    """Direct unit tests of the bracket-aware pseudo-JSON parser."""
+
+    def test_nested_object_in_array(self):
+        assert _parse_bedrock_pseudo_json(
+            "[{columnName=topic, values=[Image, Genome]}]"
+        ) == [{"columnName": "topic", "values": ["Image", "Genome"]}]
+
+    def test_simple_array(self):
+        assert _parse_bedrock_pseudo_json("[a, b, c]") == ["a", "b", "c"]
+
+    def test_empty_array(self):
+        assert _parse_bedrock_pseudo_json("[]") == []
+
+    def test_value_with_spaces_preserved(self):
+        assert _parse_bedrock_pseudo_json("[FHIR, HL7 CDA]") == ["FHIR", "HL7 CDA"]
+
+    def test_top_level_commas_not_split_inside_nested_brackets(self):
+        text = "[{columnName=topic, values=[Image, Genome]}, {columnName=category, values=[X]}]"
+        result = _parse_bedrock_pseudo_json(text)
+        assert len(result) == 2
+        assert result[0]["columnName"] == "topic"
+        assert result[1]["columnName"] == "category"
+
 
 # ---------------------------------------------------------------------------
 # _resolve_table
@@ -308,6 +368,24 @@ class TestHandlerRouting:
         assert "errors" in body
         assert all("boom" in msg for msg in body["errors"].values())
 
+    def test_count_by_type_queries_run_concurrently(self):
+        # Regression: count_by_type used to query its 7 tables one at a
+        # time, so it alone could use up to 7x a single query's share of
+        # the invocation timeout budget. Each of the 7 mocked queries below
+        # sleeps 0.15s; run sequentially that's >=1.0s, concurrently it
+        # should take roughly one query's worth of time.
+        def _slow_query(*args, **kwargs):
+            time.sleep(0.15)
+            return {"queryCount": 1}
+
+        with patch("lambda_function._run_query", side_effect=_slow_query):
+            start = time.monotonic()
+            result = lambda_function.count_by_type({})
+            elapsed = time.monotonic() - start
+
+        assert set(result["counts"]) == set(TABLES)
+        assert elapsed < 0.15 * len(TABLES) / 2
+
     def test_unknown_function(self):
         event = _function_event("noSuchFunction")
         resp = lambda_handler(event, None)
@@ -421,6 +499,41 @@ class TestRunQueryNetwork:
         with pytest.raises(Exception, match="query failed"):
             _run_query(TABLES["standards"], "SELECT * FROM {table}", 25, 0x3)
 
+    @patch("lambda_function.time.sleep")
+    @patch("lambda_function._remaining_budget")
+    @patch("lambda_function._request")
+    def test_poll_raises_immediately_when_budget_exhausted(
+        self, mock_request, mock_remaining, mock_sleep
+    ):
+        """Regression for the ~2x timeout-budget overrun: the poll loop must
+        stop as soon as the shared invocation budget is spent, not wait for
+        its own fresh QUERY_TIMEOUT-based deadline."""
+        mock_request.side_effect = [
+            (200, {"token": "tok-1"}),
+            (202, {}),
+        ]
+        mock_remaining.return_value = 0
+        from lambda_function import _run_query
+        with pytest.raises(TimeoutError, match="still running"):
+            _run_query(TABLES["standards"], "SELECT * FROM {table}", 25, 0x3)
+        mock_sleep.assert_not_called()
+
+    @patch("lambda_function.time.sleep")
+    @patch("lambda_function._remaining_budget")
+    @patch("lambda_function._request")
+    def test_poll_sleep_capped_by_remaining_budget(
+        self, mock_request, mock_remaining, mock_sleep
+    ):
+        mock_request.side_effect = [
+            (200, {"token": "tok-1"}),
+            (202, {}),
+            (200, {"queryCount": 0, "queryResult": {"queryResults": {"headers": [], "rows": []}}}),
+        ]
+        mock_remaining.return_value = 0.3  # less than the usual 1.0s poll interval
+        from lambda_function import _run_query
+        _run_query(TABLES["standards"], "SELECT * FROM {table}", 25, 0x3)
+        mock_sleep.assert_called_once_with(0.3)
+
 
 # ---------------------------------------------------------------------------
 # _request – HTTP layer
@@ -491,6 +604,90 @@ class TestRequest:
         _request("GET", "http://x")
         sent_request = mock_urlopen.call_args[0][0]
         assert sent_request.headers["Authorization"] == "Bearer my-token"
+
+    @patch("lambda_function.urllib.request.urlopen")
+    @patch("lambda_function.time.monotonic")
+    def test_urlopen_timeout_uses_remaining_invocation_budget(self, mock_monotonic, mock_urlopen):
+        mock_urlopen.return_value.__enter__ = lambda s: s
+        mock_urlopen.return_value.__exit__ = lambda *a: None
+        mock_urlopen.return_value.status = 200
+        mock_urlopen.return_value.read.return_value = b"{}"
+        mock_monotonic.side_effect = [0.0, 10.0]
+        lambda_function._start_invocation_budget()
+        try:
+            from lambda_function import _request
+            _request("GET", "http://x")
+        finally:
+            lambda_function._end_invocation_budget()
+        assert mock_urlopen.call_args.kwargs["timeout"] == pytest.approx(QUERY_TIMEOUT - 10.0)
+
+    @patch("lambda_function.time.monotonic")
+    def test_request_raises_timeout_when_invocation_budget_already_exhausted(self, mock_monotonic):
+        mock_monotonic.side_effect = [0.0, QUERY_TIMEOUT + 1]
+        lambda_function._start_invocation_budget()
+        try:
+            from lambda_function import _request
+            with pytest.raises(TimeoutError, match="budget exhausted"):
+                _request("GET", "http://x")
+        finally:
+            lambda_function._end_invocation_budget()
+
+
+# ---------------------------------------------------------------------------
+# Invocation-wide query-timeout budget
+# ---------------------------------------------------------------------------
+
+class TestInvocationBudget:
+    def setup_method(self):
+        lambda_function._end_invocation_budget()
+
+    def teardown_method(self):
+        lambda_function._end_invocation_budget()
+
+    def test_remaining_budget_full_when_no_invocation_started(self):
+        # Direct calls to the query helpers (unit tests, benchmark scripts)
+        # must keep working with a fresh budget when no invocation deadline
+        # has been set.
+        assert lambda_function._remaining_budget() == pytest.approx(QUERY_TIMEOUT)
+
+    @patch("lambda_function.time.monotonic")
+    def test_remaining_budget_shrinks_after_start(self, mock_monotonic):
+        mock_monotonic.side_effect = [100.0, 105.0]
+        lambda_function._start_invocation_budget()
+        assert lambda_function._remaining_budget() == pytest.approx(QUERY_TIMEOUT - 5.0)
+
+    @patch("lambda_function.time.monotonic")
+    def test_remaining_budget_never_negative(self, mock_monotonic):
+        mock_monotonic.side_effect = [0.0, QUERY_TIMEOUT + 100]
+        lambda_function._start_invocation_budget()
+        assert lambda_function._remaining_budget() == 0.0
+
+    @patch("lambda_function._run_query")
+    def test_lambda_handler_sets_deadline_during_and_clears_after(self, mock_run_query):
+        seen = {}
+
+        def _capture(*args, **kwargs):
+            seen["deadline_during"] = lambda_function._INVOCATION_DEADLINE
+            return _bundle(["name"], [["FHIR"]])
+
+        mock_run_query.side_effect = _capture
+        event = _api_event("/sql-query", [
+            {"name": "table", "value": "standards"},
+            {"name": "sql", "value": "SELECT * FROM {table}"},
+        ])
+        assert lambda_function._INVOCATION_DEADLINE is None
+        lambda_handler(event, None)
+        assert seen["deadline_during"] is not None
+        assert lambda_function._INVOCATION_DEADLINE is None
+
+    @patch("lambda_function._run_query", side_effect=RuntimeError("boom"))
+    def test_lambda_handler_clears_deadline_even_on_error(self, _mock):
+        event = _api_event("/sql-query", [
+            {"name": "table", "value": "standards"},
+            {"name": "sql", "value": "SELECT * FROM {table}"},
+        ])
+        lambda_handler(event, None)
+        assert lambda_function._INVOCATION_DEADLINE is None
 
 
 # ---------------------------------------------------------------------------
@@ -768,6 +965,25 @@ class TestBuildPortalUrl:
         decoded = self._decode_qw0(body["url"])
         assert decoded["selectedFacets"][0]["columnName"] == "topic"
         assert decoded["selectedFacets"][0]["facetValues"] == ["Image"]
+
+    def test_facets_via_lambda_handler_bedrock_pseudo_json(self):
+        # Regression: Bedrock's real (malformed, non-JSON) pseudo-JSON
+        # encoding for a nested array-of-objects property, end to end
+        # through extract_params -> _coerce_property_value -> build_portal_url.
+        event = _api_event("/portal-url", [
+            {"name": "resourceType", "type": "string", "value": "search"},
+            {
+                "name": "facets",
+                "type": "array",
+                "value": "[{columnName=topic, values=[Image, Genome]}]",
+            },
+        ])
+        resp = lambda_handler(event, None)
+        body = _body(resp)
+        assert body["url"].startswith("/Search/Standards?qw0=")
+        decoded = self._decode_qw0(body["url"])
+        assert decoded["selectedFacets"][0]["columnName"] == "topic"
+        assert decoded["selectedFacets"][0]["facetValues"] == ["Image", "Genome"]
 
 
 # ---------------------------------------------------------------------------
@@ -1060,6 +1276,54 @@ class TestD4DOps:
 
 
 # ---------------------------------------------------------------------------
+# D4D cache poisoning: an empty/unusable bundle must not permanently mark
+# the warm-container cache as "loaded" and block a later retry.
+# ---------------------------------------------------------------------------
+
+class TestD4DCachePoisoning:
+    @patch("lambda_function._run_query")
+    def test_ensure_d4d_loaded_retries_after_empty_bundle(self, mock_run_query):
+        mock_run_query.return_value = _bundle(
+            ["content_id", "content_type", "content_text"], []
+        )
+        lambda_function._ensure_d4d_loaded()
+        assert lambda_function._D4D_LOADED is False
+        assert lambda_function._D4D_DOCS == {}
+
+        html = _load_fixture("sample_d4d_org114.html")
+        mock_run_query.return_value = _bundle(
+            ["content_id", "content_type", "content_text"],
+            [["B2AI_ORG:114", "html", html]],
+        )
+        lambda_function._ensure_d4d_loaded()
+        assert lambda_function._D4D_LOADED is True
+        assert "B2AI_ORG:114" in lambda_function._D4D_DOCS
+
+    @patch("lambda_function._run_query")
+    def test_ensure_d4d_loaded_retries_when_rows_have_no_usable_content(self, mock_run_query):
+        # Rows came back, but none had both a content_id and content_text --
+        # still not "loaded".
+        mock_run_query.return_value = _bundle(
+            ["content_id", "content_type", "content_text"],
+            [[None, "html", None], ["B2AI_ORG:114", "html", None]],
+        )
+        lambda_function._ensure_d4d_loaded()
+        assert lambda_function._D4D_LOADED is False
+
+    @patch("lambda_function._run_query")
+    def test_ensure_d4d_org_names_loaded_retries_after_empty_bundle(self, mock_run_query):
+        mock_run_query.return_value = _bundle(["id", "name"], [])
+        lambda_function._ensure_d4d_org_names_loaded()
+        assert lambda_function._D4D_ORG_NAMES == {}
+
+        mock_run_query.return_value = _bundle(
+            ["id", "name"], [["B2AI_ORG:114", "Sample Grand Challenge"]]
+        )
+        lambda_function._ensure_d4d_org_names_loaded()
+        assert lambda_function._D4D_ORG_NAMES == {"B2AI_ORG:114": "Sample Grand Challenge"}
+
+
+# ---------------------------------------------------------------------------
 # D4D ops wired into lambda_handler (apiPath + function styles)
 # ---------------------------------------------------------------------------
 
@@ -1165,6 +1429,96 @@ class TestSqlTableAllowlist:
         result, run = self._run("SELECT * FROM {table} WHERE description LIKE '%syn123%'")
         assert "error" not in result
         run.assert_called_once()
+
+    def test_double_quoted_string_does_not_hide_a_synid(self):
+        # Regression for the table-guard bypass: a single quote inside a
+        # double-quoted identifier ("a'") used to pair with an unrelated
+        # later single quote, masking `syn99999` as if it were inside a
+        # string literal.
+        result, run = self._run(
+            "SELECT \"a'\" FROM syn99999 WHERE x = 'y'"
+        )
+        assert "error" in result
+        assert "syn99999" in result["error"]
+        run.assert_not_called()
+
+    def test_double_quoted_table_identifier_rejected(self):
+        result, run = self._run('SELECT * FROM "syn99999"')
+        assert "error" in result
+        run.assert_not_called()
+
+    def test_backtick_quoted_table_identifier_rejected(self):
+        result, run = self._run("SELECT * FROM `syn99999`")
+        assert "error" in result
+        run.assert_not_called()
+
+    def test_line_comment_rejected(self):
+        result, run = self._run("SELECT * FROM {table} -- syn99999")
+        assert "error" in result
+        run.assert_not_called()
+
+    def test_block_comment_rejected(self):
+        result, run = self._run("SELECT * FROM {table} /* syn99999 */")
+        assert "error" in result
+        run.assert_not_called()
+
+    def test_escaped_single_quote_in_string_literal_allowed(self):
+        result, run = self._run(
+            "SELECT * FROM {table} WHERE description LIKE 'it''s a %syn123% test'"
+        )
+        assert "error" not in result
+        run.assert_called_once()
+
+    def test_unterminated_single_quote_rejected(self):
+        result, run = self._run("SELECT * FROM {table} WHERE x = 'oops")
+        assert "error" in result
+        run.assert_not_called()
+
+    def test_unterminated_double_quote_rejected(self):
+        result, run = self._run('SELECT "oops FROM {table}')
+        assert "error" in result
+        run.assert_not_called()
+
+
+class TestSqlStripStringLiterals:
+    """Direct unit tests of the quote/comment scanner used by the SQL
+    table-guard, independent of sql_query's table resolution."""
+
+    def test_double_quoted_identifier_with_embedded_single_quote(self):
+        # The confirmed exploit: a lone ' inside a "..." identifier must not
+        # be treated as opening a string literal.
+        sql = "SELECT \"a'\" FROM syn99999 WHERE x = 'y'"
+        result = _check_sql_tables(sql, TABLES["standards"])
+        assert result is not None
+        assert "syn99999" in result
+
+    def test_backtick_escape_doubled(self):
+        out = _sql_strip_string_literals("SELECT `a``b` FROM t")
+        assert out == "SELECT `a``b` FROM t"
+
+    def test_double_quote_escape_doubled(self):
+        out = _sql_strip_string_literals('SELECT "a""b" FROM t')
+        assert out == 'SELECT "a""b" FROM t'
+
+    def test_single_quote_literal_is_blanked(self):
+        out = _sql_strip_string_literals("SELECT * FROM t WHERE x = 'syn123'")
+        assert "syn123" not in out
+
+    def test_unterminated_single_quote_raises(self):
+        with pytest.raises(_SqlScanError):
+            _sql_strip_string_literals("SELECT * FROM t WHERE x = 'oops")
+
+    def test_unterminated_backtick_raises(self):
+        with pytest.raises(_SqlScanError):
+            _sql_strip_string_literals("SELECT * FROM `oops")
+
+    def test_line_comment_raises(self):
+        with pytest.raises(_SqlScanError):
+            _sql_strip_string_literals("SELECT * FROM t -- comment")
+
+    def test_block_comment_raises(self):
+        with pytest.raises(_SqlScanError):
+            _sql_strip_string_literals("SELECT * FROM t /* comment */")
 
 
 def test_facet_url_is_deterministic():

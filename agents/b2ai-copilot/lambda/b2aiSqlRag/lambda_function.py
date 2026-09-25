@@ -1,4 +1,5 @@
 import base64
+import concurrent.futures
 import gzip
 import json
 import os
@@ -25,6 +26,43 @@ SYNAPSE_AUTH_TOKEN = os.environ.get("SYNAPSE_AUTH_TOKEN", "")
 # error response before AWS forcibly kills the invocation (which causes a 424).
 _LAMBDA_TIMEOUT = int(os.environ.get("LAMBDA_TIMEOUT", "30"))
 QUERY_TIMEOUT = int(os.environ.get("QUERY_TIMEOUT", str(max(_LAMBDA_TIMEOUT - 5, 5))))
+
+# A single per-invocation deadline (module global, set by `lambda_handler` at
+# the start of each invocation via `_start_invocation_budget`) so QUERY_TIMEOUT
+# is a budget for the *whole* invocation, not a fresh allowance handed out to
+# every network call. Without this, `_request`'s own urlopen timeout and
+# `_run_query`'s poll deadline could each independently spend up to
+# QUERY_TIMEOUT seconds, letting a single query use roughly 2x the intended
+# budget and overrun the Lambda's real (LAMBDA_TIMEOUT-second) timeout.
+# `_remaining_budget` is what every timeout/poll-deadline computation should
+# call, rather than referencing QUERY_TIMEOUT directly.
+_INVOCATION_DEADLINE: Optional[float] = None
+
+
+def _start_invocation_budget() -> None:
+    """Start a fresh QUERY_TIMEOUT-second budget for this invocation."""
+    global _INVOCATION_DEADLINE
+    _INVOCATION_DEADLINE = time.monotonic() + QUERY_TIMEOUT
+
+
+def _end_invocation_budget() -> None:
+    """Clear the invocation deadline (called once the response is ready)."""
+    global _INVOCATION_DEADLINE
+    _INVOCATION_DEADLINE = None
+
+
+def _remaining_budget() -> float:
+    """Seconds left in the current invocation's query-timeout budget.
+
+    When no invocation deadline is set -- i.e. `_start_invocation_budget`
+    hasn't been called, which is the case for any direct call to a query
+    helper from outside `lambda_handler` (unit tests, the benchmark scripts
+    that import this module) -- this falls back to a fresh QUERY_TIMEOUT-
+    second budget on every call, so those callers keep working unchanged.
+    """
+    if _INVOCATION_DEADLINE is None:
+        return float(QUERY_TIMEOUT)
+    return max(0.0, _INVOCATION_DEADLINE - time.monotonic())
 
 # Confirmed Bridge2AI Standards Explorer denormalized tables in Synapse
 # project syn63096806 ("standards-data"). Verified live against the Synapse
@@ -163,8 +201,14 @@ def lambda_handler(event, context):
     The entire body is wrapped in a top-level try/except so that a
     well-formed response is *always* returned; an unhandled exception would
     cause an AWS invocation failure, which Bedrock surfaces as a 424 error.
+
+    Also starts (and, in a finally, clears) this invocation's query-timeout
+    budget -- see `_start_invocation_budget`/`_remaining_budget` -- so every
+    Synapse call made while handling this event shares one QUERY_TIMEOUT-
+    second budget instead of each independently getting a fresh one.
     """
     action_group = api_path = http_method = None
+    _start_invocation_budget()
     try:
         print(f"Received event: {json.dumps(event)}")
 
@@ -211,6 +255,8 @@ def lambda_handler(event, context):
             action_group, api_path, http_method, 200,
             {"error": f"Failed to process request: {e}"},
         )
+    finally:
+        _end_invocation_budget()
 
     print(f"Returning response: {json.dumps(response)}")
     return response
@@ -229,6 +275,68 @@ def map_api_path_to_function(api_path: str) -> Optional[str]:
     return mapping.get(api_path)
 
 
+def _split_top_level(text: str) -> List[str]:
+    """Split `text` on commas that sit at bracket depth 0 (i.e. not nested
+    inside a `[...]` or `{...}` span), so a nested array/object's own commas
+    aren't mistaken for separators at this level."""
+    parts = []
+    depth = 0
+    current: List[str] = []
+    for c in text:
+        if c in "[{":
+            depth += 1
+            current.append(c)
+        elif c in "]}":
+            depth -= 1
+            current.append(c)
+        elif c == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(c)
+    parts.append("".join(current))
+    return [p.strip() for p in parts]
+
+
+def _strip_matching_quotes(text: str) -> str:
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        return text[1:-1]
+    return text
+
+
+def _parse_bedrock_pseudo_json(text: str) -> Any:
+    """Parse Bedrock's malformed pseudo-JSON for array/object-typed action
+    group parameters: bracketed, but with bare, unquoted `key=value` pairs
+    instead of valid JSON, e.g. Bedrock can send `facets` as
+    "[{columnName=topic, values=[Image, Genome]}]" instead of valid JSON
+    '[{"columnName": "topic", "values": ["Image", "Genome"]}]" — a quirk
+    also independently reported on AWS re:Post, not something specific to
+    this Lambda.
+
+    Recurses into nested `[...]`/`{...}` spans (splitting each only on its
+    own top-level commas, via `_split_top_level`) so a nested array value —
+    like `values` above — gets the same treatment, not just the outermost
+    one. Falls through to a bare (quote-stripped) string for anything that
+    isn't itself bracketed.
+    """
+    text = text.strip()
+    if text.startswith("[") and text.endswith("]"):
+        inner = text[1:-1].strip()
+        if not inner:
+            return []
+        return [_parse_bedrock_pseudo_json(item) for item in _split_top_level(inner)]
+    if text.startswith("{") and text.endswith("}"):
+        inner = text[1:-1].strip()
+        if not inner:
+            return {}
+        obj: Dict[str, Any] = {}
+        for pair in _split_top_level(inner):
+            key, sep, value = pair.partition("=")
+            obj[key.strip()] = _parse_bedrock_pseudo_json(value) if sep else None
+        return obj
+    return _strip_matching_quotes(text)
+
+
 def _coerce_property_value(declared_type: Optional[str], value: Any) -> Any:
     """Decode a Bedrock action-group property value into a real Python type.
 
@@ -239,12 +347,11 @@ def _coerce_property_value(declared_type: Optional[str], value: Any) -> Any:
     entry as `{"name": "string", "type": "string", "value": "string"}` with
     no exception for non-scalar types.
 
-    Worse, array values sometimes arrive as malformed pseudo-JSON — bracketed
-    but with bare, unquoted, comma-separated scalars, e.g.
-    "[FHIR, HL7 CDA]" instead of valid JSON '["FHIR", "HL7 CDA"]' — a quirk
-    also independently reported on AWS re:Post, not something specific to
-    this Lambda. A plain `json.loads` alone doesn't cover that case, so this
-    falls back to a manual bracket/comma parse when JSON decoding fails.
+    Worse, array/object values sometimes arrive as malformed pseudo-JSON
+    (see `_parse_bedrock_pseudo_json`) instead of valid JSON. A plain
+    `json.loads` alone doesn't cover that case, so this falls back to
+    `_parse_bedrock_pseudo_json` — a bracket-aware manual parse — when JSON
+    decoding fails.
     """
     if declared_type not in ("array", "object") or not isinstance(value, str):
         return value
@@ -253,9 +360,13 @@ def _coerce_property_value(declared_type: Optional[str], value: Any) -> Any:
         return json.loads(text)
     except (ValueError, TypeError):
         pass
-    if declared_type == "array" and text.startswith("[") and text.endswith("]"):
-        inner = text[1:-1].strip()
-        return [item.strip() for item in inner.split(",")] if inner else []
+    if (text.startswith("[") and text.endswith("]")) or (
+        text.startswith("{") and text.endswith("}")
+    ):
+        try:
+            return _parse_bedrock_pseudo_json(text)
+        except Exception:
+            pass
     return value
 
 
@@ -297,8 +408,83 @@ def _resolve_table(table: str) -> str:
     )
 
 
-_SQL_STRING_LITERAL_RE = re.compile(r"'(?:[^']|'')*'")
 _SQL_SYN_ID_RE = re.compile(r"\bsyn\d+(?:\.\d+)?\b", re.IGNORECASE)
+
+
+class _SqlScanError(Exception):
+    """Raised by `_sql_strip_string_literals` for SQL this Lambda refuses to
+    reason about (unterminated quotes, or comments that could hide text)."""
+
+
+def _scan_quoted_span(sql: str, start: int, quote_char: str) -> int:
+    """Scan a quoted span whose opening `quote_char` is at `sql[start]`.
+
+    Returns the index just past the matching closing quote. A doubled quote
+    char inside the span (`''`, `""`, or ` `` `) is the standard SQL escape
+    for a literal quote character and does not close the span. Raises
+    `_SqlScanError` if the span is never closed.
+    """
+    n = len(sql)
+    j = start + 1
+    while j < n:
+        if sql[j] == quote_char:
+            if j + 1 < n and sql[j + 1] == quote_char:
+                j += 2
+                continue
+            return j + 1
+        j += 1
+    raise _SqlScanError(f"unterminated {quote_char!r}-quoted span")
+
+
+def _sql_strip_string_literals(sql: str) -> str:
+    """Left-to-right scan of `sql` that blanks out single-quoted string
+    literal contents, leaving everything else -- including double-quoted
+    and backtick-quoted identifiers -- intact for the synId check below.
+
+    A single global regex for "strip quoted spans" can't tell a single-quote
+    string literal from a single-quote character that merely appears inside
+    a *double*-quoted identifier (e.g. `"a'"`); that stray quote can pair
+    with an unrelated later quote and hide a real synId in between
+    (confirmed exploit: `SELECT "a'" FROM syn99999 WHERE x = 'y'`, where the
+    old regex-based strip paired the `'` in `"a'"` with the `'` opening
+    `'y'` and hid `syn99999` in the "literal" it thought that formed).
+    Tracking quote state explicitly avoids that: only a `'` seen outside any
+    other quoted span opens a real string literal.
+
+    Double-quoted and backtick-quoted identifiers are intentionally left in
+    place (not blanked) rather than stripped, because a quoted identifier
+    can itself name a table (e.g. `FROM "syn99999"`), so its synId must
+    still be checked. Only single-quoted string literals are exempt.
+
+    Also raises `_SqlScanError` on a SQL comment (`--` or `/* */`), which
+    could hide a table reference from a naive substring/regex check either
+    way, and on any unterminated quote.
+    """
+    out = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        c = sql[i]
+        if c == "'":
+            end = _scan_quoted_span(sql, i, "'")
+            out.append(" " * (end - i))
+            i = end
+        elif c == '"':
+            end = _scan_quoted_span(sql, i, '"')
+            out.append(sql[i:end])
+            i = end
+        elif c == "`":
+            end = _scan_quoted_span(sql, i, "`")
+            out.append(sql[i:end])
+            i = end
+        elif sql.startswith("--", i):
+            raise _SqlScanError("SQL comments ('--') are not allowed")
+        elif sql.startswith("/*", i):
+            raise _SqlScanError("SQL comments ('/* */') are not allowed")
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 def _check_sql_tables(sql: str, syn_id: str) -> Optional[str]:
@@ -307,10 +493,14 @@ def _check_sql_tables(sql: str, syn_id: str) -> Optional[str]:
     Synapse executes whatever table the SQL's FROM clause names, regardless
     of the entity id in the request path (confirmed live: a query sent to
     syn65676531's endpoint with `FROM syn68258237` returned that table's
-    rows). So the SQL itself must be checked: every synId outside a quoted
-    string literal must be exactly the resolved, pinned id.
+    rows). So the SQL itself must be checked: every synId outside a
+    single-quoted string literal (including one inside a double-quoted or
+    backtick-quoted identifier) must be exactly the resolved, pinned id.
     """
-    unquoted = _SQL_STRING_LITERAL_RE.sub("''", sql)
+    try:
+        unquoted = _sql_strip_string_literals(sql)
+    except _SqlScanError as e:
+        return f"Invalid SQL: {e}"
     for ref in _SQL_SYN_ID_RE.findall(unquoted):
         if ref.lower() != syn_id.lower():
             return (
@@ -346,6 +536,10 @@ def _parse_response_body(text: str) -> Any:
 
 
 def _request(method: str, url: str, body: Optional[dict] = None):
+    """Issue one HTTP request, timing it out at whatever's left of the
+    current invocation's query-timeout budget (`_remaining_budget`) rather
+    than a fresh QUERY_TIMEOUT every call -- see the `_INVOCATION_DEADLINE`
+    module comment for why that matters."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {}
     # These tables are open-access and queryable anonymously; only send an
@@ -357,8 +551,13 @@ def _request(method: str, url: str, body: Optional[dict] = None):
     if data is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    remaining = _remaining_budget()
+    if remaining <= 0:
+        raise TimeoutError(
+            f"Synapse query timed out after {QUERY_TIMEOUT}s (invocation budget exhausted)"
+        )
     try:
-        with urllib.request.urlopen(req, timeout=QUERY_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=remaining) as resp:
             return resp.status, _parse_response_body(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")
@@ -371,7 +570,11 @@ def _request(method: str, url: str, body: Optional[dict] = None):
 
 
 def _run_query(syn_id: str, sql: str, limit: int, part_mask: int) -> dict:
-    """Start an async table query against one synId, poll, return the raw bundle."""
+    """Start an async table query against one synId, poll, return the raw
+    bundle. Both the start/poll requests (via `_request`) and the poll
+    deadline/sleep interval below are bounded by `_remaining_budget()`, the
+    shared per-invocation timeout budget, not an independent QUERY_TIMEOUT
+    each."""
     start_url = f"{SYNAPSE_BASE_URL}/repo/v1/entity/{syn_id}/table/query/async/start"
     body = {
         "concreteType": "org.sagebionetworks.repo.model.table.QueryBundleRequest",
@@ -385,15 +588,15 @@ def _run_query(syn_id: str, sql: str, limit: int, part_mask: int) -> dict:
     token = resp["token"]
 
     get_url = f"{SYNAPSE_BASE_URL}/repo/v1/entity/{syn_id}/table/query/async/get/{token}"
-    deadline = time.monotonic() + QUERY_TIMEOUT
     while True:
         status, resp = _request("GET", get_url)
         if status in (200, 201):
             return resp
         if status == 202:  # still processing
-            if time.monotonic() >= deadline:
+            remaining = _remaining_budget()
+            if remaining <= 0:
                 raise TimeoutError("Synapse query is still running")
-            time.sleep(1.0)
+            time.sleep(min(1.0, remaining))
             continue
         raise Exception(f"query failed (HTTP {status}): {resp}")
 
@@ -684,14 +887,30 @@ def get_columns_fn(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def count_by_type(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Count rows in every table, one query per table, run concurrently.
+
+    The 7 tables were previously counted one at a time, so this function
+    alone could burn up to 7x a single query's share of the invocation's
+    timeout budget. A `ThreadPoolExecutor` (stdlib -- the Lambda stays
+    single-file/no third-party deps) runs them in parallel instead; each
+    still shares the same `_remaining_budget()` invocation deadline, and a
+    per-table failure is still reported individually rather than failing the
+    whole call.
+    """
     counts = {}
     errors = {}
-    for alias, syn_id in TABLES.items():
-        try:
-            bundle = _run_query(_bare_id(syn_id), f"SELECT * FROM {syn_id}", 1, PART_COUNT)
-            counts[alias] = bundle.get("queryCount")
-        except Exception as e:
-            errors[alias] = str(e)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(TABLES)) as pool:
+        future_to_alias = {
+            pool.submit(_run_query, _bare_id(syn_id), f"SELECT * FROM {syn_id}", 1, PART_COUNT): alias
+            for alias, syn_id in TABLES.items()
+        }
+        for future in concurrent.futures.as_completed(future_to_alias):
+            alias = future_to_alias[future]
+            try:
+                bundle = future.result()
+                counts[alias] = bundle.get("queryCount")
+            except Exception as e:
+                errors[alias] = str(e)
     result = {"counts": counts}
     if errors:
         result["errors"] = errors
@@ -1008,24 +1227,45 @@ def _parse_d4d_document(html_text: str) -> Dict[str, Any]:
 
 
 def _ensure_d4d_loaded() -> None:
-    """Fetch and parse every D4D HTML row once per warm Lambda container."""
+    """Fetch and parse every D4D HTML row once per warm Lambda container.
+
+    `_D4D_LOADED` is only set once at least one row parsed into a usable
+    document -- never unconditionally after the fetch. Setting it
+    unconditionally would poison the warm-container cache: a transient
+    Synapse hiccup (or a query that simply comes back with zero/unusable
+    rows) would still mark D4D data as "loaded", and every D4D call for the
+    rest of that container's lifetime would then see an empty `_D4D_DOCS`
+    and report "no content available" instead of ever retrying.
+    """
     global _D4D_LOADED
     if _D4D_LOADED:
         return
     syn_id = TABLES["d4d"]
     sql = f"SELECT content_id, content_type, content_text FROM {syn_id} WHERE content_type = 'html'"
     bundle = _run_query(_bare_id(syn_id), sql, len(GC_ORG_IDS) + 1, PART_RESULTS)
+    loaded_any = False
     for row in _parse_bundle(bundle)["rows"]:
         org_id = row.get("content_id")
         html_text = row.get("content_text")
         if not org_id or not html_text:
             continue
         _D4D_DOCS[org_id] = _parse_d4d_document(html_text)
-    _D4D_LOADED = True
+        loaded_any = True
+    if loaded_any:
+        _D4D_LOADED = True
 
 
 def _ensure_d4d_org_names_loaded() -> None:
-    """Fetch the GC orgs' display names from the organizations table once."""
+    """Fetch the GC orgs' display names from the organizations table once.
+
+    Same cache-poisoning concern as `_ensure_d4d_loaded`: the "already
+    loaded" check must only be satisfied once at least one usable name row
+    has actually been cached. This is naturally the case here already --
+    the guard is the cache dict's own truthiness, not a separate flag set
+    unconditionally -- but is kept explicit (`loaded_any`) rather than
+    relying on that as an implementation detail, so an empty/unusable
+    response still leaves `_D4D_ORG_NAMES` empty and a later call retries.
+    """
     if _D4D_ORG_NAMES:
         return
     syn_id = TABLES["organizations"]
