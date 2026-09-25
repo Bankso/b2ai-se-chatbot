@@ -1159,14 +1159,26 @@ def rs_d4d_list():
 @item
 def rs_counts_by_type():
     r = lf.count_by_type({})
+    # countByType itself returns counts for all 7 pinned tables, but the
+    # question only asks about standards/datasets/organizations/topics, so
+    # expected_answer.counts is restricted to just those 4 -- an agent's
+    # answer isn't expected to (and shouldn't need to) also state the
+    # substrates/manifest/d4d counts nobody asked about, and grading
+    # shouldn't require it either.
+    asked_about = ("standards", "datasets", "organizations", "topics")
+    counts = {k: r["counts"][k] for k in asked_about}
     return {
         "id": "rs-counts-by-type",
         "category": "counts",
         "question": "How many standards, datasets, organizations, and topics are in the portal?",
         "persona": "FUNDER",
-        "notes": "countByType across all 7 pinned tables; counts are exact for the pinned versions.",
+        "notes": (
+            "countByType across all 7 pinned tables, but expected_answer.counts is restricted to "
+            "the 4 types the question actually asks about (standards/datasets/organizations/topics); "
+            "counts are exact for the pinned versions."
+        ),
         "expected_tool_calls": [{"function": "countByType", "constraints": {}}],
-        "expected_answer": {"counts": r["counts"]},
+        "expected_answer": {"counts": counts},
         "ground_truth_query": "countByType()",
         "llm_judge_fallback": False,
     }

@@ -97,17 +97,58 @@ def facets_as_dict(selected_facets):
 # Trace -> tool-call extraction
 # ---------------------------------------------------------------------------
 
+def _normalize_request_body(request_body) -> dict:
+    """Normalize a Bedrock `actionGroupInvocationInput.requestBody` into the
+    shape lambda_function.py's `extract_params` expects.
+
+    Per the Bedrock agent-runtime API reference, the orchestration *trace*'s
+    `InvocationInput.ActionGroupInvocationInput.requestBody` (type
+    `RequestBody`) maps each media type in `content` to a **list** of
+    Parameter objects:
+        requestBody.content["application/json"] = [ {name, type, value}, ... ]
+    while the Lambda *invocation event* shape `extract_params` was written
+    against (and this benchmark's dict-shaped fixtures) wraps that same list
+    in a "properties" key:
+        requestBody.content["application/json"] = {"properties": [ ... ]}
+
+    This should be confirmed against the first real `invoke_agent` trace once
+    a B2AI agent is deployed -- see the README's Trace decoding note.
+
+    Normalizes per media type: a list value is wrapped as {"properties":
+    list}; a dict value is passed through unchanged; anything else (or a
+    missing/empty requestBody) normalizes to an empty content map rather than
+    raising.
+    """
+    request_body = request_body or {}
+    content = request_body.get("content") or {}
+    normalized_content = {}
+    for media_type, value in content.items():
+        if isinstance(value, list):
+            normalized_content[media_type] = {"properties": value}
+        elif isinstance(value, dict):
+            normalized_content[media_type] = value
+        else:
+            normalized_content[media_type] = {}
+    return {"content": normalized_content}
+
+
 def _trace_input_to_lambda_event(inv_input: dict) -> dict:
     """Adapt a Bedrock `actionGroupInvocationInput` trace object into the
     shape lambda_function.py's own `extract_params`/`map_api_path_to_function`
-    expect (the same shape the real Lambda invocation event carries)."""
+    expect (the same shape the real Lambda invocation event carries).
+
+    Function-details agents put params in `parameters` (a list of
+    {name, type, value}), which `extract_params` already reads directly --
+    only `requestBody` (used by open-API/request-body-style action groups)
+    needs shape normalization; see `_normalize_request_body`.
+    """
     return {
         "actionGroup": inv_input.get("actionGroupName"),
         "apiPath": inv_input.get("apiPath", ""),
         "httpMethod": inv_input.get("verb", "POST"),
         "function": inv_input.get("function"),
         "parameters": inv_input.get("parameters", []),
-        "requestBody": inv_input.get("requestBody", {}),
+        "requestBody": _normalize_request_body(inv_input.get("requestBody")),
     }
 
 
@@ -174,8 +215,12 @@ def check_sql_query_constraints(params: dict, constraints: dict) -> list:
     # literal `{table}` placeholder -- the Lambda now rejects any SQL that
     # names a synId other than the resolved, pinned table (outside string
     # literals), so a correct agent call always uses the placeholder rather
-    # than a hardcoded synId. Reuses the Lambda's own regexes so this check
-    # stays byte-for-byte consistent with what the deployed Lambda enforces.
+    # than a hardcoded synId. Delegates the actual stray-synId scan to the
+    # Lambda's own `_check_sql_tables` (a quote-aware scanner, not a plain
+    # regex substitution -- it correctly leaves a synId inside a
+    # single-quoted string literal alone even when that literal sits next to
+    # a double-quoted identifier) rather than reimplementing it here, so this
+    # check can't drift from what the deployed Lambda actually enforces.
     if sql:
         if "{table}" not in sql:
             failures.append(
@@ -183,13 +228,18 @@ def check_sql_query_constraints(params: dict, constraints: dict) -> list:
                 "the Lambda (commit 22de2a2) rejects a hardcoded synId here"
             )
         else:
-            unquoted = lf._SQL_STRING_LITERAL_RE.sub("''", sql)
-            stray_syn_ids = lf._SQL_SYN_ID_RE.findall(unquoted)
-            if stray_syn_ids:
-                failures.append(
-                    f"sql references synId(s) {stray_syn_ids} directly instead of only via "
-                    "{table} -- rejected by the Lambda's table-scoping check (commit 22de2a2)"
-                )
+            table = params.get("table")
+            try:
+                pinned_id = lf._resolve_table(table)
+            except ValueError as e:
+                failures.append(f"sql table-scoping check could not resolve table {table!r}: {e}")
+            else:
+                substituted_sql = sql.replace("{table}", pinned_id)
+                table_error = lf._check_sql_tables(substituted_sql, pinned_id)
+                if table_error:
+                    failures.append(
+                        f"sql fails the Lambda's table-scoping check (commit 22de2a2): {table_error}"
+                    )
 
     for col in constraints.get("required_columns", []):
         if not _contains_quoted_or_bare(sql, col):
@@ -265,29 +315,45 @@ def check_build_portal_url_constraints(params: dict, output: dict, constraints: 
 
     required_facets = constraints.get("required_facets")
     if required_facets:
-        url = (output or {}).get("url", "")
-        try:
-            decoded = decode_qw0(url)
-        except ValueError as e:
-            failures.append(f"facets required but qw0 failed to decode: {e}")
-            decoded = None
-        if decoded is None and url:
-            failures.append("facets required but response url has no qw0 param")
-        elif decoded is not None:
-            actual = facets_as_dict(decoded.get("selectedFacets"))
-            match_mode = constraints.get("facet_match", "subset")
-            expected = {f["columnName"]: sorted(f["values"]) for f in required_facets}
-            if match_mode == "exact":
-                if actual != expected:
-                    failures.append(f"facets exact mismatch: expected {expected}, decoded {actual}")
-            else:  # subset
-                for col, vals in expected.items():
-                    if col not in actual:
-                        failures.append(f"facets missing expected column {col!r} (decoded {actual})")
-                    elif set(vals) - set(actual[col]):
-                        failures.append(
-                            f"facets column {col!r} missing values {set(vals) - set(actual[col])}"
-                        )
+        out = output or {}
+        url = out.get("url")
+        if not url:
+            # buildPortalUrl either errored, or no observation has arrived
+            # yet (output defaults to None until one does) -- either way
+            # there's no url to check facets against, so this is a single,
+            # explicit failure rather than falling through to the qw0 checks
+            # below (which would otherwise double-count it as a second,
+            # differently-worded failure).
+            failures.append(
+                f"facets required but buildPortalUrl returned no url "
+                f"(error: {out.get('error')})"
+            )
+        else:
+            try:
+                decoded = decode_qw0(url)
+            except ValueError as e:
+                # Counted once here; do not also fall into the "no qw0
+                # param" branch below for the same call.
+                failures.append(f"facets required but qw0 failed to decode: {e}")
+                decoded = None
+            else:
+                if decoded is None:
+                    failures.append("facets required but response url has no qw0 param")
+                else:
+                    actual = facets_as_dict(decoded.get("selectedFacets"))
+                    match_mode = constraints.get("facet_match", "subset")
+                    expected = {f["columnName"]: sorted(f["values"]) for f in required_facets}
+                    if match_mode == "exact":
+                        if actual != expected:
+                            failures.append(f"facets exact mismatch: expected {expected}, decoded {actual}")
+                    else:  # subset
+                        for col, vals in expected.items():
+                            if col not in actual:
+                                failures.append(f"facets missing expected column {col!r} (decoded {actual})")
+                            elif set(vals) - set(actual[col]):
+                                failures.append(
+                                    f"facets column {col!r} missing values {set(vals) - set(actual[col])}"
+                                )
 
     return failures
 
@@ -442,9 +508,41 @@ def grade_tool_calls(item: dict, actual_calls: list) -> dict:
 # Answer-fact grading
 # ---------------------------------------------------------------------------
 
-def _text_has_all(text: str, needles: list) -> bool:
-    text_l = (text or "").lower()
-    return all(str(n).lower() in text_l for n in needles)
+def _id_in_text(text: str, id_str: str) -> bool:
+    """True if `id_str` (e.g. 'B2AI_ORG:1') appears in `text` as a whole id,
+    not merely as a prefix of a longer id like 'B2AI_ORG:114' (plain
+    substring containment would false-positive on that). Requires no
+    word-char or ':' immediately before the match (so it isn't found glued
+    onto a longer token either) and no digit immediately after (so it can't
+    be a prefix of a longer numeric suffix)."""
+    pattern = r"(?<![\w:])" + re.escape(id_str) + r"(?!\d)"
+    return re.search(pattern, text or "") is not None
+
+
+def _ids_any_in_text(text: str, ids: list) -> bool:
+    return any(_id_in_text(text, i) for i in ids)
+
+
+def _count_pattern(n) -> str:
+    """Regex (no anchors) matching the digits of `n`, tolerating an optional
+    thousands-separator comma every 3 digits from the right (e.g. both
+    '1029' and '1,029' match for n=1029)."""
+    s = str(n)
+    groups = []
+    while len(s) > 3:
+        groups.insert(0, s[-3:])
+        s = s[:-3]
+    groups.insert(0, s)
+    return ",?".join(re.escape(g) for g in groups)
+
+
+def _count_in_text(text: str, n) -> bool:
+    """True if the number `n` appears in `text` as a standalone number --
+    not as a substring of a longer number (e.g. 3 inside 34) and not as part
+    of an id (e.g. 3 inside 'B2AI_ORG:3' shouldn't false-positive a count of
+    3 unrelated to that id) -- tolerating thousands-separator commas."""
+    pattern = r"(?<![\w:.,])" + _count_pattern(n) + r"(?![\d,])"
+    return re.search(pattern, text or "") is not None
 
 
 def grade_answer_facts(item: dict, tool_calls: list, final_text: str) -> dict:
@@ -463,27 +561,31 @@ def grade_answer_facts(item: dict, tool_calls: list, final_text: str) -> dict:
         return ok
 
     if category == "keyword-lookup":
-        ok = note(f"answer mentions id {expected['id']}", expected["id"] in (final_text or ""))
+        ok = note(f"answer mentions id {expected['id']}", _id_in_text(final_text, expected["id"]))
         ok2 = note(f"answer mentions name {expected['name']!r}", expected["name"] in (final_text or ""))
         return {"verified": ok and ok2, "checks": checks}
 
     if category in ("categorical-filter", "multi-filter-and", "multi-filter-or", "counts") and "count" in expected:
         n = expected["count"]
-        ok = note(f"answer mentions count {n}", str(n) in (final_text or ""))
+        ok = note(f"answer mentions count {n}", _count_in_text(final_text, n))
         return {"verified": ok, "checks": checks}
 
     if category == "counts" and "counts" in expected:
         all_ok = True
         for alias, n in expected["counts"].items():
-            ok = note(f"answer mentions {alias}={n}", str(n) in (final_text or ""))
+            ok = note(f"answer mentions {alias}={n}", _count_in_text(final_text, n))
             all_ok = all_ok and ok
         return {"verified": all_ok, "checks": checks}
 
     if category == "redirect":
         # Prefer checking the actual decoded tool output over the chat text.
+        # `output` defaults to None (set only once a matching observation
+        # arrives in the trace), so `.get("output", {})` -- whose default
+        # only applies when the KEY is missing, not when its value is None
+        # -- would still return None here and crash on the next `.get`.
         for call in tool_calls:
-            if call["function"] == "buildPortalUrl" and call.get("output", {}).get("url"):
-                url = call["output"]["url"]
+            url = (call.get("output") or {}).get("url")
+            if call["function"] == "buildPortalUrl" and url:
                 if "url_path" in expected:
                     ok = note(f"redirect url matches {expected['url_path']!r}", url == expected["url_path"])
                     return {"verified": ok, "checks": checks}
@@ -491,13 +593,37 @@ def grade_answer_facts(item: dict, tool_calls: list, final_text: str) -> dict:
         return {"verified": None, "checks": checks}
 
     if category == "linked-resource":
-        ids_fields = [k for k in expected if k.endswith("_ids") or k.endswith("_id")]
         if expected.get("expect_no_link_reported"):
             return {"verified": None, "checks": checks}  # needs judge: "no link" is a text claim
+
+        # Only fields naming the LINKED entities count as evidence here --
+        # never the subject's own id (e.g. `standard_id` when the question
+        # is "which orgs are linked to this standard" -- the answer
+        # trivially repeats the subject's id/name, which proves nothing
+        # about whether the *link* was found). By this dataset's own naming
+        # convention (build_ground_truth.py) the subject's id always uses
+        # the singular "_id" suffix (standard_id, org_id, dataset_id,
+        # topic_id) while linked entities use the plural "_ids" suffix
+        # (relevant_org_ids, responsible_org_ids, governed_standard_ids,
+        # producing_org_ids, dataset_ids) or a "_ids_contains" single-id spot
+        # check (governed_standard_ids_contains, standard_ids_contains).
+        # Filtering on "_ids"/"_ids_contains" instead of the old "_id"/"_ids"
+        # pair naturally excludes every subject field without needing a
+        # per-item allowlist.
+        #
+        # Using "any" (not "all") of the linked ids: several of these lists
+        # hold multiple ids (e.g. 3 relevant orgs for FHIR), and a correct
+        # narrative answer isn't expected to recite every single one
+        # verbatim -- but it must ground itself in at least one real linked
+        # id, never the subject's own id or a fabricated one.
+        ids_fields = [
+            k for k in expected
+            if k.endswith("_ids") or k.endswith("_ids_contains")
+        ]
         if ids_fields:
             any_present = any(
-                isinstance(expected[f], list) and any(i in (final_text or "") for i in expected[f])
-                or isinstance(expected[f], str) and expected[f] in (final_text or "")
+                isinstance(expected[f], list) and _ids_any_in_text(final_text, expected[f])
+                or isinstance(expected[f], str) and _id_in_text(final_text, expected[f])
                 for f in ids_fields
             )
             note("answer mentions at least one expected linked id", any_present)
@@ -518,7 +644,10 @@ def grade_answer_facts(item: dict, tool_calls: list, final_text: str) -> dict:
         if "hit_count" in expected and expected["hit_count"] == 0:
             return {"verified": None, "checks": checks}  # "not covered" phrasing -> judge
         if "org_ids" in expected:
-            ok = note("answer mentions all 4 GC org ids", _text_has_all(final_text, expected["org_ids"]))
+            ok = note(
+                "answer mentions all 4 GC org ids",
+                all(_id_in_text(final_text, i) for i in expected["org_ids"]),
+            )
             return {"verified": ok, "checks": checks}
 
     return {"verified": None, "checks": checks}

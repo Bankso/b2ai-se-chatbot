@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-25T16:11:33Z",
+  "generated_at": "2026-09-25T17:04:49Z",
   "generated_by": "build_ground_truth.py",
   "pinned_versions": {
     "standards": "syn65676531.99",
@@ -1272,7 +1272,7 @@
       "category": "counts",
       "question": "How many standards, datasets, organizations, and topics are in the portal?",
       "persona": "FUNDER",
-      "notes": "countByType across all 7 pinned tables; counts are exact for the pinned versions.",
+      "notes": "countByType across all 7 pinned tables, but expected_answer.counts is restricted to the 4 types the question actually asks about (standards/datasets/organizations/topics); counts are exact for the pinned versions.",
       "expected_tool_calls": [
         {
           "function": "countByType",
@@ -1284,10 +1284,7 @@
           "standards": 1029,
           "datasets": 116,
           "organizations": 130,
-          "topics": 82,
-          "substrates": 81,
-          "manifest": 70,
-          "d4d": 5
+          "topics": 82
         }
       },
       "ground_truth_query": "countByType()",
