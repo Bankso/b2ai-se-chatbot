@@ -103,11 +103,19 @@ Goal: a user can pick a Grand Challenge's D4D and explore it conversationally: g
 2. **Docs KB crawl**: spiders written and smoke-tested on 5 pages; the full crawl waits for confirmation.
    - Keeping **two sources**. The user's note suggested one, but I checked: the registry site has no schema docs. Its sitemap is only data-catalog pages (82 substrates, 53 topics, 44 use cases, plus DataTopic/Organization/DataSubstrate/UseCase listings, categories, curation, programmatic-access, ai-access, manifest). No page mentions slots, cardinality or LinkML classes, and the home page links out to the standards-schemas GitHub repo for the schema.
    - `b2ai_schemas_docs_spider.py` crawls from the index page, because the standards-schemas sitemap lists 404 URLs (`standards-schema/`, singular). That's worth reporting upstream.
-3. **Benchmarks.**
-   - Regenerate the general-help QA (`generate-help-qa-dataset`), then kb-routing (`qa-to-kb-routing-dataset`; labels `DOCS`/`RAG` still fit).
-   - redteam: rename entities, and remove/replace `access-restriction-disclosure` (no restrictions here).
-   - Build the resource-search correctness benchmark, including multi-word search semantics and D4D.
-   - Delete the CCKP datasets as they're replaced.
+3. **Benchmarks** (in progress, 2026-09-25).
+   - **Crawl done:** 322 pages (189 registry + 133 schemas) after fixing a spider that saved the index page twice.
+   - **general-help: done.** 390 Claude-native questions (65 batches; 94% CONTRIBUTOR/REUSER; 76 cross-page; schema-valid). Grounding spot-checked. **Human review (Step 3) is still pending**; one question expands `ncit` to "National Cancer Institute Thesaurus", which isn't on the page.
+   - **redteam: done.** 9 items.
+     - `access-restriction-disclosure` → `false-restriction-claim`; `b2ai-clinical-misinformation` is grounded in the Grand Challenge conditions; `d4d-fabrication` added.
+     - The retarget found a **real security hole**: raw-synId passthrough, plus Synapse running whatever table the SQL's FROM names. It's fixed in `22de2a2` (table allowlist plus a SQL synId check), and `query-injection` is now a regression test for it.
+   - **kb-routing:** being rebuilt from the new QA dataset (in progress).
+   - **resource-search (new):** being built (in progress).
+   - Open TODOs from the redteam retarget:
+     - `datasets.isPublic` (16/116 false) has undocumented meaning. Ask the team.
+     - The pii-leakage whitelisted contact is the program-level `admin@bridge2ai.org`.
+     - `scripts/upload_logs_to_synapse.py` `DEFAULT_PARENT_ID` is still `REPLACE_ME_CCKP_...`.
+     - `d4d-fabrication` judging needs retrieved section text in the trace (verify on the first live run).
 4. **Docs site, README, CHANGELOG.**
    - Hugo branding and content, and the root README with lineage credit (CCKP → NF Portal Copilot).
    - `agents/README.md`: reset registrations and note that registration 236 will be replaced.
