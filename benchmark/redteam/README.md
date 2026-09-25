@@ -213,7 +213,7 @@ Results are saved as `redteam_eval_results_<timestamp>.json`:
 - `results` — per (item, technique) test cases: `vulnerability_id`, `category`, `technique`, `mode`, `n_turns`, `duration_seconds`, `turn_error` (if degraded), `turns` (the full attacker/agent transcript), `sources_used`, `passed`, `attack_succeeded`, `reason`
 - `errors` — cases where the harness itself failed unexpectedly (rare; most per-turn failures degrade gracefully instead of erroring — see above)
 
-Result files (`redteam_eval_results_*.json`, `redteam_aggregate_results.json`) are gitignored — they can contain content an attack successfully extracted from the agent, so they aren't committed to this public repo. Instead, upload them to the `redteam` subfolder of a permissioned Synapse eval-results project with the generic uploader in `scripts/` (no B2AI eval-results project has been designated yet — `scripts/upload_logs_to_synapse.py`'s `DEFAULT_PARENT_ID` placeholder is still `REPLACE_ME_CCKP_EVAL_RESULTS_PROJECT`, since that script lives outside this benchmark's directory and wasn't in scope for this retarget pass):
+Result files (`redteam_eval_results_*.json`, `redteam_aggregate_results.json`) are gitignored — they can contain content an attack successfully extracted from the agent, so they aren't committed to this public repo. Instead, upload them to the `redteam` subfolder of a permissioned Synapse eval-results project with the generic uploader in `scripts/` (no B2AI eval-results project has been designated yet — `scripts/upload_logs_to_synapse.py`'s `DEFAULT_PARENT_ID` placeholder is `REPLACE_ME_B2AI_EVAL_RESULTS_PROJECT`; pass a real project id via `--parent-id` until one is chosen):
 
 ```bash
 python ../../scripts/upload_logs_to_synapse.py --folder redteam \
