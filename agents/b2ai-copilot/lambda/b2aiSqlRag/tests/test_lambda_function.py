@@ -20,14 +20,16 @@ from lambda_function import (
     _bare_id,
     _check_sql_tables,
     _coerce_property_value,
+    _d4d_render_value,
+    _d4d_section_key,
     _make_response,
     _parse_bedrock_pseudo_json,
     _parse_bundle,
-    _parse_d4d_document,
     _resolve_table,
     _sql_strip_string_literals,
     _SqlScanError,
     build_portal_url,
+    compare_d4d,
     extract_params,
     get_d4d,
     lambda_handler,
@@ -40,11 +42,17 @@ from lambda_function import (
 )
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
+SAMPLE_D4D_DATA_PATH = os.path.join(FIXTURES_DIR, "sample_d4d_data.json")
 
 
 def _load_fixture(name):
     with open(os.path.join(FIXTURES_DIR, name)) as f:
         return f.read()
+
+
+def _load_json_fixture(name):
+    with open(os.path.join(FIXTURES_DIR, name), encoding="utf-8") as f:
+        return json.load(f)
 
 
 # ---------------------------------------------------------------------------
@@ -1041,82 +1049,109 @@ class TestParseResponseBodyControlChars:
 
 
 # ---------------------------------------------------------------------------
-# D4D HTML parsing
+# _d4d_render_value — JSON value -> readable text
 # ---------------------------------------------------------------------------
 
-class TestParseD4DDocument:
-    def setup_method(self):
-        self.html = _load_fixture("sample_d4d_org114.html")
-        self.doc = _parse_d4d_document(self.html)
+class TestD4DRenderValue:
+    def test_none_is_empty(self):
+        assert _d4d_render_value(None) == ""
 
-    def test_title(self):
-        assert self.doc["title"] == "Sample GC Dataset Documentation"
+    def test_scalars(self):
+        assert _d4d_render_value("hello") == "hello"
+        assert _d4d_render_value(42) == "42"
+        assert _d4d_render_value(3.5) == "3.5"
+        assert _d4d_render_value(True) == "True"
+        assert _d4d_render_value(False) == "False"
 
-    def test_section_ids_and_headings_in_order(self):
-        assert [s["id"] for s in self.doc["sections"]] == [
-            "motivation", "composition", "collection-process", "distribution",
-        ]
-        assert [s["heading"] for s in self.doc["sections"]] == [
-            "Motivation", "Composition", "Collection Process", "Distribution",
-        ]
+    def test_list_of_scalars_is_bulleted(self):
+        assert _d4d_render_value(["a", "b"]) == "- a\n- b"
 
-    def test_section_description_captured(self):
-        motivation = self.doc["sections"][0]
-        assert motivation["description"] == "Why was the dataset created?"
+    def test_empty_list_and_dict_are_empty(self):
+        assert _d4d_render_value([]) == ""
+        assert _d4d_render_value({}) == ""
 
-    def test_link_rendered_as_markdown(self):
-        motivation = self.doc["sections"][0]["text"]
-        assert "[https://example.org/datasets/1](https://example.org/datasets/1)" in motivation
+    def test_all_scalar_dict_is_inline(self):
+        assert _d4d_render_value({"id": "x-1", "name": "X"}) == "ID: x-1; Name: X"
 
-    def test_table_rendered_as_rows(self):
-        motivation = self.doc["sections"][0]["text"]
-        assert "Description: Understand consent workflows in sample data." in motivation
-        assert "ID: purpose-001" in motivation
-        assert "Name: Understanding consent" in motivation
+    def test_dict_key_label_overrides(self):
+        text = _d4d_render_value({"funder_id": "f-1", "funder_url": "http://x", "doi": "10.1/x"})
+        assert text == "Funder ID: f-1; Funder URL: http://x; DOI: 10.1/x"
 
-    def test_nested_dl_in_list_rendered_inline(self):
-        motivation = self.doc["sections"][0]["text"]
-        assert "ID: funder-001" in motivation
-        assert "Name: Sample Funding Program" in motivation
-        assert "Funded for testing purposes only." in motivation
+    def test_none_and_empty_values_dropped_from_dict(self):
+        text = _d4d_render_value({"a": "keep", "b": None, "c": ""})
+        assert text == "A: keep"
 
-    def test_plain_list_rendered_as_bullets(self):
-        composition = self.doc["sections"][1]["text"]
-        assert "- Sample Keyword" in composition
-        assert "- Consent" in composition
+    def test_list_of_dicts_bulleted_inline(self):
+        text = _d4d_render_value([{"id": "1", "name": "A"}, {"id": "2", "name": "B"}])
+        assert text == "- ID: 1; Name: A\n- ID: 2; Name: B"
 
-    def test_plain_scalar_value(self):
-        distribution = self.doc["sections"][3]["text"]
-        assert distribution.strip() == "How will the dataset be distributed?\n\n**License**\nCC BY-NC 4.0"
+    def test_dict_with_nested_dict_is_multiline_and_indented(self):
+        text = _d4d_render_value({
+            "name": "Sample instance",
+            "funder": {"id": "funder-001", "name": "Sample Funding Program"},
+        })
+        assert text == (
+            "Name: Sample instance\n"
+            "Funder:\n"
+            "  ID: funder-001; Name: Sample Funding Program"
+        )
 
-    def test_required_indicator_asterisk_not_leaked_into_label(self):
-        motivation = self.doc["sections"][0]["text"]
-        assert "**ID**" in motivation
-        assert "**ID *" not in motivation
-        assert "ID *" not in motivation
-
-    def test_script_and_style_dropped(self):
-        full_text = json.dumps(self.doc)
-        assert "console.log" not in full_text
-        assert "color: red" not in full_text
-
-    def test_ol_with_nested_dl_rendered(self):
-        collection = self.doc["sections"][2]["text"]
-        assert "ID: instance-001" in collection
-        assert "Name: Sample instance" in collection
+    def test_dict_with_nested_list_is_multiline_and_indented(self):
+        text = _d4d_render_value({"license": "CC BY-NC 4.0", "formats": ["CSV", "JSON"]})
+        assert text == (
+            "License: CC BY-NC 4.0\n"
+            "Formats:\n"
+            "  - CSV\n"
+            "  - JSON"
+        )
 
 
 # ---------------------------------------------------------------------------
-# D4D ops — listD4Ds / getD4D / searchD4D
+# _ensure_d4d_loaded — reads d4d_data.json (no more HTML fetch/parse)
 # ---------------------------------------------------------------------------
 
-def _d4d_run_query_side_effect(html_by_org, org_names):
-    """A `_run_query` side_effect that answers both the D4D content query
-    and the organizations-name lookup query the D4D ops issue."""
+class TestD4DDataLoading:
+    def test_loads_and_renders_sample_fixture(self, monkeypatch):
+        monkeypatch.setattr(lambda_function, "_D4D_DATA_PATH", SAMPLE_D4D_DATA_PATH)
+        lambda_function._ensure_d4d_loaded()
+        assert lambda_function._D4D_LOADED is True
+        assert set(lambda_function._D4D_DOCS.keys()) == {"B2AI_ORG:114", "B2AI_ORG:115"}
+        assert lambda_function._D4D_SOURCE["repo"] == "bridge2ai/data-sheets-schema"
+        assert "license" in lambda_function._D4D_FIELDS
+        assert lambda_function._D4D_FIELD_INDEX["license"] == "license"
+        assert lambda_function._D4D_FIELD_INDEX["distribution info"] == "distribution_info"
+
+    def test_retries_when_docs_render_to_nothing(self, tmp_path, monkeypatch):
+        empty_path = tmp_path / "empty_d4d_data.json"
+        empty_path.write_text(json.dumps({
+            "source": {}, "sections": [], "fields": {}, "docs": {},
+        }))
+        monkeypatch.setattr(lambda_function, "_D4D_DATA_PATH", str(empty_path))
+        lambda_function._ensure_d4d_loaded()
+        assert lambda_function._D4D_LOADED is False
+        assert lambda_function._D4D_DOCS == {}
+
+        monkeypatch.setattr(lambda_function, "_D4D_DATA_PATH", SAMPLE_D4D_DATA_PATH)
+        lambda_function._ensure_d4d_loaded()
+        assert lambda_function._D4D_LOADED is True
+        assert "B2AI_ORG:114" in lambda_function._D4D_DOCS
+
+    def test_missing_file_raises_and_does_not_mark_loaded(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(lambda_function, "_D4D_DATA_PATH", str(tmp_path / "nope.json"))
+        with pytest.raises(OSError):
+            lambda_function._ensure_d4d_loaded()
+        assert lambda_function._D4D_LOADED is False
+
+
+# ---------------------------------------------------------------------------
+# D4D ops — listD4Ds / getD4D (outline, section, field) / compareD4D / searchD4D
+# ---------------------------------------------------------------------------
+
+def _d4d_org_names_side_effect(org_names):
+    """A `_run_query` side_effect answering the organizations-name lookup
+    the D4D ops issue (D4D content itself now comes from the local JSON
+    file, not a Synapse query)."""
     def _side_effect(entity_id, sql, limit, part_mask):
-        if "content_text" in sql:
-            rows = [[oid, "html", html] for oid, html in html_by_org.items()]
-            return _bundle(["content_id", "content_type", "content_text"], rows)
         if sql.strip().startswith("SELECT id, name"):
             rows = [[oid, name] for oid, name in org_names.items()]
             return _bundle(["id", "name"], rows)
@@ -1126,98 +1161,127 @@ def _d4d_run_query_side_effect(html_by_org, org_names):
 
 @pytest.fixture(autouse=True)
 def _reset_d4d_caches():
-    """The D4D ops cache parsed docs/org names in module globals across warm
-    invocations -- reset them before/after every test so tests don't leak
-    state into each other."""
-    lambda_function._D4D_DOCS.clear()
-    lambda_function._D4D_ORG_NAMES.clear()
-    lambda_function._D4D_LOADED = False
+    """The D4D ops cache the loaded data file/org names in module globals
+    across warm invocations -- reset them before/after every test so tests
+    don't leak state into each other."""
+    def _clear():
+        lambda_function._D4D_DOCS.clear()
+        lambda_function._D4D_ORG_NAMES.clear()
+        lambda_function._D4D_SOURCE.clear()
+        lambda_function._D4D_FIELDS.clear()
+        lambda_function._D4D_FIELD_INDEX.clear()
+        lambda_function._D4D_LOADED = False
+    _clear()
     yield
-    lambda_function._D4D_DOCS.clear()
-    lambda_function._D4D_ORG_NAMES.clear()
-    lambda_function._D4D_LOADED = False
+    _clear()
 
 
-class TestD4DOps:
-    HTML_BY_ORG = {
-        "B2AI_ORG:114": _load_fixture("sample_d4d_org114.html"),
-        "B2AI_ORG:115": _load_fixture("sample_d4d_org115.html"),
-    }
+class _SampleD4DDataMixin:
     ORG_NAMES = {
         "B2AI_ORG:114": "Sample Grand Challenge",
         "B2AI_ORG:115": "Other Sample Grand Challenge",
     }
 
-    def _patch_run_query(self, mock_run_query):
-        mock_run_query.side_effect = _d4d_run_query_side_effect(self.HTML_BY_ORG, self.ORG_NAMES)
+    @pytest.fixture(autouse=True)
+    def _use_sample_data(self, monkeypatch):
+        monkeypatch.setattr(lambda_function, "_D4D_DATA_PATH", SAMPLE_D4D_DATA_PATH)
 
+    def _patch_org_names(self, mock_run_query):
+        mock_run_query.side_effect = _d4d_org_names_side_effect(self.ORG_NAMES)
+
+
+class TestD4DOps(_SampleD4DDataMixin):
     @patch("lambda_function._run_query")
     def test_list_d4ds(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
+        self._patch_org_names(mock_run_query)
         result = list_d4ds({})
         assert [d["orgId"] for d in result["d4ds"]] == ["B2AI_ORG:114", "B2AI_ORG:115"]
         assert result["d4ds"][0]["name"] == "Sample Grand Challenge"
         assert result["d4ds"][0]["link"] == "/Explore/Organization/OrganizationDetailsPage?id=B2AI_ORG:114"
         assert result["d4ds"][0]["title"] == "Sample GC Dataset Documentation"
+        assert result["source"]["repo"] == "bridge2ai/data-sheets-schema"
 
     @patch("lambda_function._run_query")
     def test_list_d4ds_skips_orgs_with_no_content(self, mock_run_query):
-        mock_run_query.side_effect = _d4d_run_query_side_effect(
-            {"B2AI_ORG:114": self.HTML_BY_ORG["B2AI_ORG:114"]}, self.ORG_NAMES
-        )
+        self._patch_org_names(mock_run_query)
         result = list_d4ds({})
-        assert [d["orgId"] for d in result["d4ds"]] == ["B2AI_ORG:114"]
+        # GC_ORG_IDS includes B2AI_ORG:116/117, which aren't in the sample data at all.
+        assert "B2AI_ORG:116" not in [d["orgId"] for d in result["d4ds"]]
+        assert "B2AI_ORG:117" not in [d["orgId"] for d in result["d4ds"]]
 
     @patch("lambda_function._run_query")
     def test_get_d4d_outline(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
+        self._patch_org_names(mock_run_query)
         result = get_d4d({"orgId": "B2AI_ORG:114"})
         assert result["orgId"] == "B2AI_ORG:114"
         assert result["orgName"] == "Sample Grand Challenge"
         assert result["orgLink"] == "/Explore/Organization/OrganizationDetailsPage?id=B2AI_ORG:114"
+        assert result["title"] == "Sample GC Dataset Documentation"
+        assert result["source"]["repo"] == "bridge2ai/data-sheets-schema"
         assert [s["id"] for s in result["sections"]] == [
-            "motivation", "composition", "collection-process", "distribution",
+            "motivation", "composition", "collection-process", "distribution", "other",
         ]
-        assert all("size" in s for s in result["sections"])
+        assert all("size" in s and "fields" in s for s in result["sections"])
+        distribution = next(s for s in result["sections"] if s["id"] == "distribution")
+        assert [f["id"] for f in distribution["fields"]] == ["distribution_info", "license"]
+        for f in distribution["fields"]:
+            assert set(f) == {"id", "label", "size", "portalSection"}
+            assert f["portalSection"] == "Distribution"
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_outline_omits_empty_sections_per_org(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        result = get_d4d({"orgId": "B2AI_ORG:115"})
+        # B2AI_ORG:115 has no `collection_instances`, so that section is absent.
+        assert [s["id"] for s in result["sections"]] == [
+            "motivation", "composition", "distribution", "other",
+        ]
 
     @patch("lambda_function._run_query")
     def test_get_d4d_section_text(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
+        self._patch_org_names(mock_run_query)
         result = get_d4d({"orgId": "B2AI_ORG:114", "section": "distribution"})
         assert result["section"] == "distribution"
         assert result["heading"] == "Distribution"
+        assert "### Distribution Info" in result["text"]
+        assert "### License" in result["text"]
         assert "CC BY-NC 4.0" in result["text"]
         assert "nextOffset" not in result
 
     @patch("lambda_function._run_query")
-    def test_get_d4d_section_pagination(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
+    def test_get_d4d_section_renders_nested_values(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        result = get_d4d({"orgId": "B2AI_ORG:114", "section": "collection-process"})
+        text = result["text"]
+        assert "ID: instance-001" in text
+        assert "Name: Sample instance" in text
+        assert "Funder:" in text
+        assert "ID: funder-001; Name: Sample Funding Program" in text
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_section_pagination_reconstructs_exact_text(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        full = get_d4d({"orgId": "B2AI_ORG:114", "section": "collection-process"})
+        assert "nextOffset" not in full
+
         with patch("lambda_function.D4D_SECTION_BUDGET", 20):
-            page1 = get_d4d({"orgId": "B2AI_ORG:114", "section": "motivation"})
+            page1 = get_d4d({"orgId": "B2AI_ORG:114", "section": "collection-process"})
             assert len(page1["text"]) == 20
             assert page1["nextOffset"] == 20
-            total = page1["totalLength"]
-            assert total > 20
 
-            # Walk the whole section by paging; concatenation must
-            # reconstruct the section's original text with no gaps/overlaps.
             collected = page1["text"]
             offset = page1["nextOffset"]
             while True:
                 page = get_d4d({
-                    "orgId": "B2AI_ORG:114", "section": "motivation", "offset": offset,
+                    "orgId": "B2AI_ORG:114", "section": "collection-process", "offset": offset,
                 })
-                assert page["totalLength"] == total
+                assert page["totalLength"] == full["totalLength"]
                 collected += page["text"]
                 if "nextOffset" not in page:
                     break
                 offset = page["nextOffset"]
 
-            expected = _parse_d4d_document(self.HTML_BY_ORG["B2AI_ORG:114"])
-            expected_text = next(
-                s["text"] for s in expected["sections"] if s["id"] == "motivation"
-            )
-            assert collected == expected_text
+            assert collected == full["text"]
 
     @patch("lambda_function._run_query")
     def test_get_d4d_missing_org_id(self, mock_run_query):
@@ -1226,90 +1290,195 @@ class TestD4DOps:
 
     @patch("lambda_function._run_query")
     def test_get_d4d_unknown_org_id(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
+        self._patch_org_names(mock_run_query)
         result = get_d4d({"orgId": "B2AI_ORG:999"})
         assert "error" in result
         assert "B2AI_ORG:114" in result["error"]
 
     @patch("lambda_function._run_query")
     def test_get_d4d_unknown_section_lists_valid_ids(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
+        self._patch_org_names(mock_run_query)
         result = get_d4d({"orgId": "B2AI_ORG:114", "section": "nonexistent"})
         assert "error" in result
         assert "motivation" in result["error"]
         assert "distribution" in result["error"]
 
     @patch("lambda_function._run_query")
-    def test_search_d4d_cross_org(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
-        result = search_d4d({"query": "consent"})
-        assert result["query"] == "consent"
-        org_ids_hit = {r["orgId"] for r in result["results"]}
-        assert "B2AI_ORG:114" in org_ids_hit
-        assert "B2AI_ORG:115" in org_ids_hit
-        for hit in result["results"]:
-            assert "consent" in hit["snippet"].lower()
-            assert len(hit["snippet"]) <= 300
-
-    @patch("lambda_function._run_query")
-    def test_search_d4d_scoped_to_one_org(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
-        result = search_d4d({"query": "consent", "orgId": "B2AI_ORG:114"})
-        assert all(r["orgId"] == "B2AI_ORG:114" for r in result["results"])
-
-    @patch("lambda_function._run_query")
-    def test_search_d4d_missing_query(self, mock_run_query):
-        assert search_d4d({}) == {"error": "query is required"}
+    def test_get_d4d_section_and_field_together_is_error(self, mock_run_query):
+        result = get_d4d({"orgId": "B2AI_ORG:114", "section": "distribution", "field": "license"})
+        assert "error" in result
         mock_run_query.assert_not_called()
 
     @patch("lambda_function._run_query")
-    def test_search_d4d_unknown_org_id(self, mock_run_query):
-        self._patch_run_query(mock_run_query)
-        result = search_d4d({"query": "consent", "orgId": "B2AI_ORG:999"})
+    def test_get_d4d_field_by_key(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        result = get_d4d({"orgId": "B2AI_ORG:114", "field": "license"})
+        assert result == {
+            "orgId": "B2AI_ORG:114",
+            "field": "license",
+            "label": "License",
+            "description": "The dataset's license.",
+            "schemaSection": "distribution",
+            "portalSection": "Distribution",
+            "inSchema": False,
+            "text": "CC BY-NC 4.0",
+        }
+        # Field responses don't need the org-name lookup at all.
+        mock_run_query.assert_not_called()
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_field_matches_label_case_and_spacing_insensitively(self, mock_run_query):
+        by_label = get_d4d({"orgId": "B2AI_ORG:114", "field": "DISTRIBUTION info"})
+        by_key = get_d4d({"orgId": "B2AI_ORG:114", "field": "distribution_info"})
+        assert by_label["field"] == by_key["field"] == "distribution_info"
+        mock_run_query.assert_not_called()
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_field_pagination(self, mock_run_query):
+        page1 = get_d4d({"orgId": "B2AI_ORG:114", "field": "large_notes"})
+        assert page1["field"] == "large_notes"
+        assert page1["inSchema"] is False
+        assert len(page1["text"]) == lambda_function.D4D_SECTION_BUDGET
+        assert "nextOffset" in page1
+
+        collected = page1["text"]
+        offset = page1["nextOffset"]
+        while True:
+            page = get_d4d({"orgId": "B2AI_ORG:114", "field": "large_notes", "offset": offset})
+            collected += page["text"]
+            if "nextOffset" not in page:
+                break
+            offset = page["nextOffset"]
+        assert "Note item 1:" in collected
+        assert "Note item 400:" in collected
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_field_unknown_for_org_lists_valid_field_ids(self, mock_run_query):
+        # `license` exists globally but B2AI_ORG:115 has no value for it.
+        result = get_d4d({"orgId": "B2AI_ORG:115", "field": "license"})
+        assert "error" in result
+        assert "purpose" in result["error"]
+        assert "large_notes" in result["error"]
+        assert "license" not in result["error"].split("Valid fields: ")[-1].split(", ")
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_field_totally_unknown(self, mock_run_query):
+        result = get_d4d({"orgId": "B2AI_ORG:114", "field": "not_a_real_field"})
         assert "error" in result
 
     @patch("lambda_function._run_query", side_effect=Exception("synapse down"))
-    def test_get_d4d_load_failure_returns_error(self, _mock):
+    def test_get_d4d_org_names_failure_returns_error(self, _mock):
         result = get_d4d({"orgId": "B2AI_ORG:114"})
         assert "error" in result
         assert "synapse down" in result["error"]
 
+    def test_get_d4d_data_load_failure_returns_error(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(lambda_function, "_D4D_DATA_PATH", str(tmp_path / "nope.json"))
+        result = get_d4d({"orgId": "B2AI_ORG:114"})
+        assert "error" in result
+
+
+class TestCompareD4D(_SampleD4DDataMixin):
+    @patch("lambda_function._run_query")
+    def test_compare_present_and_absent_orgs(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        result = compare_d4d({"field": "license"})
+        assert result["field"] == "license"
+        assert result["label"] == "License"
+        assert result["schemaSection"] == "distribution"
+        assert result["portalSection"] == "Distribution"
+        by_org = {o["orgId"]: o for o in result["orgs"]}
+        assert set(by_org) == set(GC_ORG_IDS)
+        assert by_org["B2AI_ORG:114"] == {
+            "orgId": "B2AI_ORG:114",
+            "name": "Sample Grand Challenge",
+            "present": True,
+            "text": "CC BY-NC 4.0",
+            "truncated": False,
+        }
+        assert by_org["B2AI_ORG:115"]["present"] is False
+        assert by_org["B2AI_ORG:115"]["text"] == ""
+        assert by_org["B2AI_ORG:116"]["present"] is False
+
+    @patch("lambda_function._run_query")
+    def test_compare_matches_by_label(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        result = compare_d4d({"field": "Large Notes"})
+        assert result["field"] == "large_notes"
+
+    @patch("lambda_function._run_query")
+    def test_compare_caps_and_flags_truncation(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        result = compare_d4d({"field": "large_notes"})
+        by_org = {o["orgId"]: o for o in result["orgs"]}
+        per_org_budget = lambda_function.D4D_SECTION_BUDGET // len(GC_ORG_IDS)
+        assert len(by_org["B2AI_ORG:114"]["text"]) <= per_org_budget
+        assert by_org["B2AI_ORG:114"]["truncated"] is True
+        assert by_org["B2AI_ORG:115"]["truncated"] is False
+        total_text_len = sum(len(o["text"]) for o in result["orgs"])
+        assert total_text_len <= lambda_function.D4D_SECTION_BUDGET
+
+    @patch("lambda_function._run_query")
+    def test_compare_missing_field(self, mock_run_query):
+        assert compare_d4d({}) == {"error": "field is required"}
+        mock_run_query.assert_not_called()
+
+    @patch("lambda_function._run_query")
+    def test_compare_unknown_field(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        result = compare_d4d({"field": "not_a_real_field"})
+        assert "error" in result
+        assert "license" in result["error"]
+
+
+class TestSearchD4D(_SampleD4DDataMixin):
+    def test_search_hits_have_the_documented_shape(self):
+        result = search_d4d({"query": "consent"})
+        assert result["query"] == "consent"
+        assert result["results"]
+        for hit in result["results"]:
+            assert set(hit) == {"orgId", "section", "heading", "field", "label", "snippet"}
+            assert len(hit["snippet"]) <= 300
+
+    def test_search_cross_org(self):
+        result = search_d4d({"query": "consent"})
+        org_ids_hit = {r["orgId"] for r in result["results"]}
+        assert "B2AI_ORG:114" in org_ids_hit
+        assert "B2AI_ORG:115" in org_ids_hit
+
+    def test_search_matches_field_label_even_without_text_match(self):
+        result = search_d4d({"query": "large notes"})
+        hits = [h for h in result["results"] if h["field"] == "large_notes"]
+        assert hits
+        assert hits[0]["label"] == "Large Notes"
+
+    def test_search_scoped_to_one_org(self):
+        result = search_d4d({"query": "consent", "orgId": "B2AI_ORG:114"})
+        assert result["results"]
+        assert all(r["orgId"] == "B2AI_ORG:114" for r in result["results"])
+
+    def test_search_no_hits(self):
+        result = search_d4d({"query": "blockchain"})
+        assert result == {"query": "blockchain", "results": []}
+
+    @patch("lambda_function._run_query")
+    def test_search_missing_query(self, mock_run_query):
+        assert search_d4d({}) == {"error": "query is required"}
+        mock_run_query.assert_not_called()
+
+    def test_search_unknown_org_id(self):
+        result = search_d4d({"query": "consent", "orgId": "B2AI_ORG:999"})
+        assert "error" in result
+
 
 # ---------------------------------------------------------------------------
-# D4D cache poisoning: an empty/unusable bundle must not permanently mark
-# the warm-container cache as "loaded" and block a later retry.
+# D4D cache poisoning: an empty/unusable org-names bundle must not
+# permanently mark the warm-container cache as "loaded" and block a later
+# retry (the underlying data file's own retry behavior is covered by
+# TestD4DDataLoading above).
 # ---------------------------------------------------------------------------
 
-class TestD4DCachePoisoning:
-    @patch("lambda_function._run_query")
-    def test_ensure_d4d_loaded_retries_after_empty_bundle(self, mock_run_query):
-        mock_run_query.return_value = _bundle(
-            ["content_id", "content_type", "content_text"], []
-        )
-        lambda_function._ensure_d4d_loaded()
-        assert lambda_function._D4D_LOADED is False
-        assert lambda_function._D4D_DOCS == {}
-
-        html = _load_fixture("sample_d4d_org114.html")
-        mock_run_query.return_value = _bundle(
-            ["content_id", "content_type", "content_text"],
-            [["B2AI_ORG:114", "html", html]],
-        )
-        lambda_function._ensure_d4d_loaded()
-        assert lambda_function._D4D_LOADED is True
-        assert "B2AI_ORG:114" in lambda_function._D4D_DOCS
-
-    @patch("lambda_function._run_query")
-    def test_ensure_d4d_loaded_retries_when_rows_have_no_usable_content(self, mock_run_query):
-        # Rows came back, but none had both a content_id and content_text --
-        # still not "loaded".
-        mock_run_query.return_value = _bundle(
-            ["content_id", "content_type", "content_text"],
-            [[None, "html", None], ["B2AI_ORG:114", "html", None]],
-        )
-        lambda_function._ensure_d4d_loaded()
-        assert lambda_function._D4D_LOADED is False
-
+class TestD4DOrgNamesCachePoisoning:
     @patch("lambda_function._run_query")
     def test_ensure_d4d_org_names_loaded_retries_after_empty_bundle(self, mock_run_query):
         mock_run_query.return_value = _bundle(["id", "name"], [])
@@ -1327,30 +1496,24 @@ class TestD4DCachePoisoning:
 # D4D ops wired into lambda_handler (apiPath + function styles)
 # ---------------------------------------------------------------------------
 
-class TestD4DHandlerRouting:
+class TestD4DHandlerRouting(_SampleD4DDataMixin):
     @patch("lambda_function._run_query")
     def test_list_d4ds_api_path(self, mock_run_query):
-        mock_run_query.side_effect = _d4d_run_query_side_effect(
-            TestD4DOps.HTML_BY_ORG, TestD4DOps.ORG_NAMES
-        )
+        self._patch_org_names(mock_run_query)
         resp = lambda_handler(_api_event("/d4d-list"), None)
         body = _body(resp)
         assert len(body["d4ds"]) == 2
 
     @patch("lambda_function._run_query")
     def test_list_d4ds_function(self, mock_run_query):
-        mock_run_query.side_effect = _d4d_run_query_side_effect(
-            TestD4DOps.HTML_BY_ORG, TestD4DOps.ORG_NAMES
-        )
+        self._patch_org_names(mock_run_query)
         resp = lambda_handler(_function_event("listD4Ds"), None)
         body = _body(resp)
         assert len(body["d4ds"]) == 2
 
     @patch("lambda_function._run_query")
     def test_get_d4d_api_path(self, mock_run_query):
-        mock_run_query.side_effect = _d4d_run_query_side_effect(
-            TestD4DOps.HTML_BY_ORG, TestD4DOps.ORG_NAMES
-        )
+        self._patch_org_names(mock_run_query)
         event = _api_event("/d4d", [
             {"name": "orgId", "value": "B2AI_ORG:114"},
             {"name": "section", "value": "distribution"},
@@ -1361,9 +1524,7 @@ class TestD4DHandlerRouting:
 
     @patch("lambda_function._run_query")
     def test_get_d4d_function(self, mock_run_query):
-        mock_run_query.side_effect = _d4d_run_query_side_effect(
-            TestD4DOps.HTML_BY_ORG, TestD4DOps.ORG_NAMES
-        )
+        self._patch_org_names(mock_run_query)
         resp = lambda_handler(
             _function_event("getD4D", [{"name": "orgId", "value": "B2AI_ORG:114"}]), None
         )
@@ -1372,10 +1533,49 @@ class TestD4DHandlerRouting:
         assert "sections" in body
 
     @patch("lambda_function._run_query")
-    def test_search_d4d_api_path(self, mock_run_query):
-        mock_run_query.side_effect = _d4d_run_query_side_effect(
-            TestD4DOps.HTML_BY_ORG, TestD4DOps.ORG_NAMES
+    def test_get_d4d_with_field_api_path(self, mock_run_query):
+        event = _api_event("/d4d", [
+            {"name": "orgId", "value": "B2AI_ORG:114"},
+            {"name": "field", "value": "license"},
+        ])
+        resp = lambda_handler(event, None)
+        body = _body(resp)
+        assert body["field"] == "license"
+        assert body["text"] == "CC BY-NC 4.0"
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_with_field_function(self, mock_run_query):
+        resp = lambda_handler(
+            _function_event("getD4D", [
+                {"name": "orgId", "value": "B2AI_ORG:114"},
+                {"name": "field", "value": "license"},
+            ]),
+            None,
         )
+        body = _body(resp)
+        assert body["field"] == "license"
+
+    @patch("lambda_function._run_query")
+    def test_compare_d4d_api_path(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        resp = lambda_handler(
+            _api_event("/d4d-compare", [{"name": "field", "value": "license"}]), None
+        )
+        body = _body(resp)
+        assert body["field"] == "license"
+        assert len(body["orgs"]) == len(GC_ORG_IDS)
+
+    @patch("lambda_function._run_query")
+    def test_compare_d4d_function(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        resp = lambda_handler(
+            _function_event("compareD4D", [{"name": "field", "value": "license"}]), None
+        )
+        body = _body(resp)
+        assert body["field"] == "license"
+
+    @patch("lambda_function._run_query")
+    def test_search_d4d_api_path(self, mock_run_query):
         resp = lambda_handler(
             _api_event("/d4d-search", [{"name": "query", "value": "consent"}]), None
         )
@@ -1384,15 +1584,141 @@ class TestD4DHandlerRouting:
 
     @patch("lambda_function._run_query")
     def test_search_d4d_function(self, mock_run_query):
-        mock_run_query.side_effect = _d4d_run_query_side_effect(
-            TestD4DOps.HTML_BY_ORG, TestD4DOps.ORG_NAMES
-        )
         resp = lambda_handler(
             _function_event("searchD4D", [{"name": "query", "value": "consent"}]), None
         )
         body = _body(resp)
         assert len(body["results"]) > 0
 
+
+# ---------------------------------------------------------------------------
+# d4d_data.json contract — validated against the real bundled file when
+# present (it's generated by a separate tool, not committed by this change,
+# so this test is a no-op skip until that file lands).
+# ---------------------------------------------------------------------------
+
+class TestRealD4DDataContract:
+    def test_real_data_file_matches_contract(self):
+        path = lambda_function._D4D_DATA_PATH
+        if not os.path.exists(path):
+            pytest.skip("d4d_data.json not present")
+
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        assert set(data) >= {"source", "sections", "fields", "docs"}
+
+        docs = data["docs"]
+        assert len(docs) == 4
+        assert set(docs.keys()) == set(GC_ORG_IDS)
+
+        sections = data["sections"]
+        section_ids = [s["id"] for s in sections]
+        assert section_ids[-1] == "other"
+        assert len(section_ids) == len(set(section_ids)), "duplicate section ids"
+
+        # Exact match: the contract says schemaSection is a sections[].id.
+        # The Lambda's `_d4d_section_key` tolerates a heading in its place,
+        # but a build that emits one is a build bug and should fail here.
+        fields = data["fields"]
+        assert fields
+        for key, meta in fields.items():
+            assert meta.get("schemaSection") in section_ids, (
+                f"field {key!r} has schemaSection {meta.get('schemaSection')!r}, "
+                f"which isn't one of {section_ids!r}"
+            )
+            assert isinstance(meta.get("inSchema"), bool), f"field {key!r} inSchema must be a bool"
+            assert meta.get("label"), f"field {key!r} is missing a label"
+
+        for org_id, doc in docs.items():
+            assert doc.get("title"), f"{org_id} is missing a title"
+            assert isinstance(doc.get("data"), dict), f"{org_id}.data must be an object"
+            for key in doc["data"]:
+                assert key in fields, f"{org_id} has an undeclared top-level field {key!r}"
+
+        source = data["source"]
+        for key in ("repo", "commit", "synapseTable"):
+            assert source.get(key), f"source.{key} is missing"
+
+
+# ---------------------------------------------------------------------------
+# getD4D(orgId) outline size cap — _d4d_fit_outline
+# ---------------------------------------------------------------------------
+
+class TestD4DOutlineBudget:
+    def test_fit_outline_is_a_noop_under_budget(self):
+        outline = {
+            "sections": [
+                {"id": "s", "fields": [{"id": "a", "label": "A", "size": 1, "portalSection": None}],
+                 "fieldsTruncated": False},
+            ],
+        }
+        fitted = lambda_function._d4d_fit_outline(json.loads(json.dumps(outline)))
+        assert fitted == outline
+
+    def test_fit_outline_trims_largest_section_and_flags_it(self):
+        big_field = {"label": "x" * 200, "size": 1, "portalSection": None}
+        many_fields = [dict(big_field, id=f"f{i}") for i in range(300)]
+        outline = {
+            "orgId": "B2AI_ORG:114",
+            "orgName": "X",
+            "orgLink": "/x",
+            "title": "T",
+            "source": {},
+            "sections": [
+                {"id": "big", "heading": "Big", "description": "", "size": 1,
+                 "fields": many_fields, "fieldsTruncated": False},
+                {"id": "small", "heading": "Small", "description": "", "size": 1,
+                 "fields": [dict(big_field, id="s1")], "fieldsTruncated": False},
+            ],
+        }
+        fitted = lambda_function._d4d_fit_outline(outline)
+        assert lambda_function._d4d_outline_size(fitted) <= lambda_function.D4D_OUTLINE_BUDGET
+
+        big_section = next(s for s in fitted["sections"] if s["id"] == "big")
+        small_section = next(s for s in fitted["sections"] if s["id"] == "small")
+        assert big_section["fieldsTruncated"] is True
+        assert len(big_section["fields"]) < 300
+        assert small_section["fieldsTruncated"] is False
+        assert len(small_section["fields"]) == 1
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_outline_end_to_end_stays_under_budget(self, mock_run_query, tmp_path, monkeypatch):
+        mock_run_query.side_effect = _d4d_org_names_side_effect({"B2AI_ORG:114": "Big Org"})
+        n = 400
+        fields_meta = {
+            f"field_{i}": {
+                "label": f"Field Number {i} With A Somewhat Long Descriptive Label",
+                "description": None,
+                "descriptionSource": None,
+                "extraSource": None,
+                "schemaSection": "other",
+                "portalSection": None,
+                "inSchema": True,
+            }
+            for i in range(n)
+        }
+        data = {
+            "source": {"repo": "r", "commit": "c", "synapseTable": "syn1.1"},
+            "sections": [{"id": "other", "heading": "Other", "description": ""}],
+            "fields": fields_meta,
+            "docs": {
+                "B2AI_ORG:114": {
+                    "gc": "X",
+                    "title": "Big Doc",
+                    "data": {k: f"value for {k}" for k in fields_meta},
+                }
+            },
+        }
+        path = tmp_path / "big_d4d_data.json"
+        path.write_text(json.dumps(data))
+        monkeypatch.setattr(lambda_function, "_D4D_DATA_PATH", str(path))
+
+        result = get_d4d({"orgId": "B2AI_ORG:114"})
+        assert len(json.dumps(result)) <= lambda_function.D4D_OUTLINE_BUDGET
+        other = next(s for s in result["sections"] if s["id"] == "other")
+        assert other["fieldsTruncated"] is True
+        assert len(other["fields"]) < n
 
 # ---------------------------------------------------------------------------
 # SQL table allowlist

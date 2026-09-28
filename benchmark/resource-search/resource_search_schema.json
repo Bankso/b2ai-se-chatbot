@@ -100,7 +100,7 @@
           "type": "string",
           "enum": [
             "sqlQuery", "buildPortalUrl", "getColumns", "countByType",
-            "listD4Ds", "getD4D", "searchD4D"
+            "listD4Ds", "getD4D", "compareD4D", "searchD4D"
           ],
           "description": "operationId from agents/b2ai-copilot/lambda/b2aiSqlRag/openapi.yaml / the function the Lambda dispatches on."
         },
@@ -111,7 +111,7 @@
         },
         "constraints": {
           "type": "object",
-          "description": "Function-specific parameter constraints checked deterministically by evaluate_resource_search.py against the decoded actionGroupInvocationInput parameters (and, for buildPortalUrl, against the decoded qw0). Recognized keys by function -- sqlQuery: table, required_columns, required_values, forbid_values, and_columns, or_column, or_values, join_hint (informational only); buildPortalUrl: resourceType, id, search_term_exact, search_term_forbidden_multi_word, required_facets ([{columnName, values}]), facet_match ('exact'|'subset', default 'subset'); getD4D: orgId, section (a string id, or null to require the outline call i.e. no 'section' param); searchD4D: query_contains, orgId, orgId_must_be_absent; getColumns: table; countByType/listD4Ds: {} (no parameters expected)."
+          "description": "Function-specific parameter constraints checked deterministically by evaluate_resource_search.py against the decoded actionGroupInvocationInput parameters (and, for buildPortalUrl, against the decoded qw0). Recognized keys by function -- sqlQuery: table, required_columns, required_values, forbid_values, and_columns, or_column, or_values, join_hint (informational only); buildPortalUrl: resourceType, id, search_term_exact, search_term_forbidden_multi_word, required_facets ([{columnName, values}]), facet_match ('exact'|'subset', default 'subset'); getD4D: orgId, section (a string id, or null to require the outline call i.e. no 'section' param), field (a top-level D4D field key or its label, matched case-insensitively with spaces/underscores treated as equivalent, the way the Lambda's own field resolver does -- 'section' and 'field' are mutually exclusive, matching the Lambda); compareD4D: field (same matching rules as getD4D's field); searchD4D: query_contains, orgId, orgId_must_be_absent; getColumns: table; countByType/listD4Ds: {} (no parameters expected)."
         }
       }
     }

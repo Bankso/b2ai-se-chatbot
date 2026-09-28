@@ -36,7 +36,7 @@ Evaluation decodes the agent's **actual tool-call parameters** from the Bedrock 
 | `multi-filter-or` | 2 | Either-of intent on the **same** column, where OR is the correct semantics. |
 | `linked-resource` | 7 | Cross-table joins (standard ↔ organization, dataset → org, topic → standards, org → datasets), plus a deliberate negative case (a standard with no linked organization). |
 | `redirect` | 8 | Decoded `qw0` filter-shape correctness for `buildPortalUrl` search links, plus Detail Page redirects and a forbidden-shape item (a two-word `SEARCH_TERM` masquerading as an AND). |
-| `d4d` | 5 | The Grand Challenge D4D sub-routine: a section fact, a cross-GC `searchD4D` comparison, an outline request, a deliberate "not covered" case, and `listD4Ds`. |
+| `d4d` | 5 | The Grand Challenge D4D sub-routine: a single-GC field fact (`getD4D` with `field`), a cross-GC `searchD4D` comparison, an outline request, a deliberate "not covered" case, and `listD4Ds`. |
 | `counts` | 4 | `countByType()` across all 7 pinned tables, plus per-category and table-total counts. |
 
 There is no `dataset-operations`/access-restriction category (present in the CCKP-era plan this benchmark was adapted from) — every B2AI table is fully open access, so there's no restricted/external-hosting status to test.

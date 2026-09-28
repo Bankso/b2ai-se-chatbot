@@ -73,7 +73,7 @@ jobs:
       - name: Upload Lambda package
         run: |
           cd "$LAMBDA_DIR"
-          zip /tmp/b2aiSqlRag.zip lambda_function.py
+          zip /tmp/b2aiSqlRag.zip lambda_function.py d4d_data.json
           aws s3 cp /tmp/b2aiSqlRag.zip "s3://${S3_BUCKET}/${S3_KEY}"
 
       - name: Deploy stack

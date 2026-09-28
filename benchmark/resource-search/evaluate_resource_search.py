@@ -358,6 +358,16 @@ def check_build_portal_url_constraints(params: dict, output: dict, constraints: 
     return failures
 
 
+def _d4d_fields_equivalent(a, b) -> bool:
+    """Case-insensitive, space/underscore-insensitive field-name comparison,
+    matching the Lambda's own `_d4d_resolve_field`/`_d4d_normalize_field_name`
+    -- so a constraint written as a label ("Human Subject Research") matches
+    a call that passed the key ("human_subject_research"), and vice versa."""
+    if a is None or b is None:
+        return a == b
+    return lf._d4d_normalize_field_name(a) == lf._d4d_normalize_field_name(b)
+
+
 def check_get_d4d_constraints(params: dict, constraints: dict) -> list:
     failures = []
     if "orgId" in constraints and params.get("orgId") != constraints["orgId"]:
@@ -369,6 +379,23 @@ def check_get_d4d_constraints(params: dict, constraints: dict) -> list:
             failures.append(f"expected the outline call (no section), got section={actual_section!r}")
         elif expected_section is not None and actual_section != expected_section:
             failures.append(f"section: expected {expected_section!r}, got {actual_section!r}")
+    if "field" in constraints:
+        expected_field = constraints["field"]
+        actual_field = params.get("field") or None
+        if expected_field is None and actual_field is not None:
+            failures.append(f"expected no field param, got field={actual_field!r}")
+        elif expected_field is not None and not _d4d_fields_equivalent(actual_field, expected_field):
+            failures.append(f"field: expected {expected_field!r}, got {actual_field!r}")
+    return failures
+
+
+def check_compare_d4d_constraints(params: dict, constraints: dict) -> list:
+    failures = []
+    if "field" in constraints:
+        expected_field = constraints["field"]
+        actual_field = params.get("field")
+        if not _d4d_fields_equivalent(actual_field, expected_field):
+            failures.append(f"field: expected {expected_field!r}, got {actual_field!r}")
     return failures
 
 
@@ -396,6 +423,7 @@ _CONSTRAINT_CHECKERS = {
     "sqlQuery": lambda params, output, constraints: check_sql_query_constraints(params, constraints),
     "buildPortalUrl": check_build_portal_url_constraints,
     "getD4D": lambda params, output, constraints: check_get_d4d_constraints(params, constraints),
+    "compareD4D": lambda params, output, constraints: check_compare_d4d_constraints(params, constraints),
     "searchD4D": lambda params, output, constraints: check_search_d4d_constraints(params, constraints),
     "getColumns": lambda params, output, constraints: check_get_columns_constraints(params, constraints),
     "countByType": lambda params, output, constraints: [],
@@ -418,7 +446,8 @@ def _candidate_matches(expected_call: dict, actual_calls: list) -> list:
 _IDENTITY_KEYS = {
     "sqlQuery": ("table",),
     "buildPortalUrl": ("resourceType", "id", "search_term_exact"),
-    "getD4D": ("orgId", "section"),
+    "getD4D": ("orgId", "section", "field"),
+    "compareD4D": ("field",),
     "searchD4D": ("orgId",),
     "getColumns": ("table",),
 }
@@ -437,6 +466,14 @@ def _identity_matches(function: str, params: dict, constraints: dict) -> bool:
             expected_section = constraints[key]
             actual_section = params.get("section") or None
             if expected_section != actual_section:
+                return False
+        elif key == "field" and function in ("getD4D", "compareD4D"):
+            expected_field = constraints[key]
+            actual_field = params.get("field") or None
+            if expected_field is None:
+                if actual_field is not None:
+                    return False
+            elif not _d4d_fields_equivalent(actual_field, expected_field):
                 return False
         elif params.get(key) != constraints[key]:
             return False

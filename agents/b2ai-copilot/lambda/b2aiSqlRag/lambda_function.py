@@ -9,7 +9,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional
 
 
@@ -197,7 +196,10 @@ def lambda_handler(event, context):
     tables (standards, datasets, organizations, topics, substrates, manifest,
     d4d) directly via the Synapse table-query REST API, plus a D4D
     (Datasheets for Datasets) exploration sub-routine (listD4Ds/getD4D/
-    searchD4D) that parses the d4d table's HTML rows into pageable sections.
+    compareD4D/searchD4D) over `d4d_data.json`, a bundled JSON rendering of
+    the pinned D4D source YAML (see the "D4D exploration sub-routine" module
+    comment below) -- not the `d4d` table's HTML content, which `sqlQuery`
+    can still reach directly if needed.
     The entire body is wrapped in a top-level try/except so that a
     well-formed response is *always* returned; an unhandled exception would
     cause an AWS invocation failure, which Bedrock surfaces as a 424 error.
@@ -232,6 +234,8 @@ def lambda_handler(event, context):
             response_body = list_d4ds(params)
         elif function == "getD4D":
             response_body = get_d4d(params)
+        elif function == "compareD4D":
+            response_body = compare_d4d(params)
         elif function == "searchD4D":
             response_body = search_d4d(params)
         else:
@@ -270,6 +274,7 @@ def map_api_path_to_function(api_path: str) -> Optional[str]:
         "/count-by-type": "countByType",
         "/d4d-list": "listD4Ds",
         "/d4d": "getD4D",
+        "/d4d-compare": "compareD4D",
         "/d4d-search": "searchD4D",
     }
     return mapping.get(api_path)
@@ -921,337 +926,265 @@ def count_by_type(params: Dict[str, Any]) -> Dict[str, Any]:
 # D4D (Datasheets for Datasets) exploration sub-routine
 # ---------------------------------------------------------------------------
 #
-# D4D_content (syn68885644, pinned .13) has one HTML row per Bridge2AI Grand
-# Challenge org (content_id = the org's `id`, e.g. "B2AI_ORG:114") plus one
-# CSS row (content_id is null) that this Lambda ignores. Each HTML document
-# is 38-60 KB -- too large to return whole through a Bedrock action group
-# (~25 KB response limit) -- so it's parsed once into named sections that can
-# be paged individually.
+# `d4d_data.json` (bundled next to this Lambda -- see `_D4D_DATA_PATH`) is a
+# pinned JSON rendering of the Bridge2AI Datasheets-for-Datasets source YAML
+# (see `data-sheets-schema`, https://github.com/bridge2ai/data-sheets-schema)
+# for the 4 Grand Challenge orgs, generated offline by a separate tool -- this
+# Lambda only reads it. Its shape (kept in sync with whatever generates the
+# file):
 #
-# Real HTML structure, confirmed live against all 4 GC rows on 2026-09-24
-# (this is NOT the generic Datasheets-for-Datasets heading set the plan
-# guessed at -- there is no "Preprocessing" heading, and there is an extra
-# "Human Subjects" heading):
+#   {
+#     "source": {"repo", "commit", "synapseTable", ...},  # other keys (e.g. a
+#         # schema path) may come and go upstream -- only repo/commit/
+#         # synapseTable are read here; see `_D4D_SOURCE_KEYS`.
+#     "sections": [{"id", "heading", "description"}, ...],  # contract order,
+#         # ids are schema-section slugs, always ending with {"id": "other",
+#         # ...} for fields the schema assigns to no D4D section.
+#     "fields": {
+#         "<top-level YAML key>": {
+#             "label", "description", "descriptionSource", "extraSource",
+#             "schemaSection", "portalSection", "inSchema",
+#         },
+#         ...  # one entry per top-level key that appears in ANY of the 4 docs
+#     },
+#     "docs": {"B2AI_ORG:114": {"gc", "title", "data": {...}}, ...},
+#   }
 #
-#   <h1>{Consortium} Dataset Documentation</h1>
-#   <div class="section">                          (one per top-level heading)
-#     <h2 class="section-title">Motivation</h2>          (also: Composition,
-#     <p class="section-description">...</p>              Collection Process,
-#     <div class="section-content">                       Uses, Distribution,
-#       <div class="data-item">                            Maintenance,
-#         <label class="item-label required-field|optional-field">          Human Subjects)
-#           {Field label}
-#           <span class="required-indicator">*</span>  (only on required fields)
-#         </label>
-#         <div class="item-value">{scalar text | <a href> | <table class="data-table">
-#           with <thead><tr><th>...</th></tr></thead><tbody><tr><td>...} |
-#           <ul|ol class="formatted-list"><li>{text | <dl class="nested-dict">
-#           <dt>Key</dt><dd>Value</dd>...</dl>}</li></ul>}
-#         </div>
-#       </div>
-#       ...
-#     </div>
-#   </div>
-#   ...
-#
-# There are no subsection headings (h3+) in the real data -- each section is
-# a flat list of labeled fields -- so a section's stable id is simply a slug
-# of its own heading (e.g. "collection-process"), not a multi-level path.
+# `data` is the full YAML document as JSON -- arbitrarily nested scalars,
+# lists, and dicts, and can be substantial (e.g. AI-READI's is ~100 KB of
+# YAML). Each top-level key's value is rendered once (at load time, into
+# `_D4D_DOCS`) into readable text via `_d4d_render_value`, then grouped into
+# sections and paged the same way the old HTML-derived sections were, so
+# `getD4D`/`searchD4D`/`compareD4D` don't have to care whether the underlying
+# value was a scalar, a list, or a nested dict. A doc's *outline*
+# (`getD4D(orgId)` with no `section`/`field`) never includes rendered text --
+# only per-field metadata (id/label/size/portalSection) -- but a doc with an
+# unusually large number of fields could still push that metadata past
+# Bedrock's response budget, so `_d4d_fit_outline` caps and flags it; see
+# `D4D_OUTLINE_BUDGET`.
 
-D4D_SECTION_BUDGET = 15000  # chars per getD4D(section=...) response
+_D4D_DATA_PATH = os.path.join(os.path.dirname(__file__), "d4d_data.json")
+_D4D_SOURCE_KEYS = ("repo", "commit", "synapseTable")
+
+D4D_SECTION_BUDGET = 15000  # chars per getD4D(section=...)/getD4D(field=...) page
+D4D_OUTLINE_BUDGET = 20000  # bytes (serialized) per getD4D(orgId) outline response
 D4D_SNIPPET_CHARS = 300
 D4D_MAX_SNIPPETS = 20
 
-# Cold-start caches, populated on first use and reused across warm Lambda
-# invocations (module globals persist between invocations in the same
-# execution environment).
-_D4D_DOCS: Dict[str, Dict[str, Any]] = {}  # orgId -> {"title": ..., "sections": [...]}
+# Cold-start caches, populated on first use (by `_ensure_d4d_loaded`/
+# `_ensure_d4d_org_names_loaded`) and reused across warm Lambda invocations
+# (module globals persist between invocations in the same execution
+# environment).
+_D4D_SOURCE: Dict[str, Any] = {}  # the data file's top-level "source" object
+_D4D_FIELDS: Dict[str, Any] = {}  # top-level YAML key -> field metadata (global, not per-org)
+_D4D_FIELD_INDEX: Dict[str, str] = {}  # normalized key-or-label -> canonical field key
+_D4D_DOCS: Dict[str, Dict[str, Any]] = {}  # orgId -> {"title", "fields": {...}, "sections": [...]}
 _D4D_ORG_NAMES: Dict[str, str] = {}  # orgId -> org name
 _D4D_LOADED = False
 
-
-class _D4DNode:
-    """A minimal HTML element node: a tag, its attributes, and its children
-    (each child is either another _D4DNode or a str of literal text)."""
-
-    __slots__ = ("tag", "attrs", "children")
-
-    def __init__(self, tag: str, attrs):
-        self.tag = tag
-        self.attrs = dict(attrs)
-        self.children: List[Any] = []
+_D4D_KEY_LABEL_OVERRIDES = {"id": "ID", "url": "URL", "doi": "DOI"}
 
 
-class _D4DTreeBuilder(HTMLParser):
-    """Builds a lightweight DOM tree from D4D HTML using only the stdlib.
-
-    Not a general-purpose HTML5 parser -- it never needs to be, since the D4D
-    documents are machine-generated with a fixed, well-formed structure (see
-    the module comment above). `<script>`/`<style>` content is dropped
-    entirely per the plan ("drop script/style").
-    """
-
-    _VOID = {"br", "img", "hr", "meta", "link", "input"}
-    _SKIP = {"script", "style"}
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.root = _D4DNode("root", [])
-        self._stack = [self.root]
-        self._skip_depth = 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in self._SKIP:
-            self._skip_depth += 1
-            return
-        if self._skip_depth:
-            return
-        node = _D4DNode(tag, attrs)
-        self._stack[-1].children.append(node)
-        if tag not in self._VOID:
-            self._stack.append(node)
-
-    def handle_startendtag(self, tag, attrs):
-        if self._skip_depth or tag in self._SKIP:
-            return
-        self._stack[-1].children.append(_D4DNode(tag, attrs))
-
-    def handle_endtag(self, tag):
-        if tag in self._SKIP:
-            if self._skip_depth:
-                self._skip_depth -= 1
-            return
-        if self._skip_depth:
-            return
-        # Close back to the nearest matching open tag (tolerates any
-        # unclosed/mismatched tags rather than raising).
-        for i in range(len(self._stack) - 1, 0, -1):
-            if self._stack[i].tag == tag:
-                del self._stack[i:]
-                break
-
-    def handle_data(self, data):
-        if self._skip_depth:
-            return
-        self._stack[-1].children.append(data)
+def _d4d_key_label(key: str) -> str:
+    """A nested-dict key -> readable label: split on "_", capitalize each
+    word, with a few acronyms kept upper-case (id/url/doi), e.g.
+    "funder_id" -> "Funder ID". (Top-level fields use `fields[key].label`
+    from the data file instead of this -- see `_d4d_render_value`'s
+    callers.)"""
+    words = []
+    for word in key.split("_"):
+        override = _D4D_KEY_LABEL_OVERRIDES.get(word.lower())
+        words.append(override if override else word.capitalize())
+    return " ".join(words)
 
 
-def _d4d_has_class(node: Any, cls: str) -> bool:
-    if isinstance(node, str):
-        return False
-    return cls in (node.attrs.get("class") or "").split()
-
-
-def _d4d_find_all(node: _D4DNode, tag: str, _out=None) -> List[_D4DNode]:
-    """Recursively find every descendant with the given tag name."""
-    out = [] if _out is None else _out
-    for c in node.children:
-        if not isinstance(c, str):
-            if c.tag == tag:
-                out.append(c)
-            _d4d_find_all(c, tag, out)
-    return out
-
-
-def _d4d_find_all_class(node: _D4DNode, tag: str, cls: str, _out=None) -> List[_D4DNode]:
-    """Recursively find descendants with the given tag+class, not descending
-    further into a match (so nested same-class elements aren't double-counted)."""
-    out = [] if _out is None else _out
-    for c in node.children:
-        if not isinstance(c, str):
-            if c.tag == tag and _d4d_has_class(c, cls):
-                out.append(c)
-            else:
-                _d4d_find_all_class(c, tag, cls, out)
-    return out
-
-
-def _d4d_text_of(node: Any) -> str:
-    """Flatten all text in a node's subtree into one whitespace-normalized string."""
-    parts: List[str] = []
-
-    def walk(n):
-        if isinstance(n, str):
-            parts.append(n)
-        else:
-            for c in n.children:
-                walk(c)
-
-    walk(node)
-    return " ".join("".join(parts).split())
-
-
-def _d4d_label_text(label_node: _D4DNode) -> str:
-    """Text of an <label class="item-label ..."> excluding the "*" required
-    indicator span, e.g. "ID *" -> "ID"."""
-    parts: List[str] = []
-    for c in label_node.children:
-        if isinstance(c, str):
-            parts.append(c)
-        elif _d4d_has_class(c, "required-indicator"):
-            continue
-        else:
-            parts.append(_d4d_text_of(c))
-    return " ".join(" ".join(parts).split())
-
-
-def _d4d_render_table(n: _D4DNode) -> str:
-    """Render a <table class="data-table"> as one "- Header: value; ..." line
-    per data row (header row from <th>, values from each <td> row)."""
-    header_cells = [_d4d_text_of(th) for th in _d4d_find_all(n, "th")]
+def _d4d_render_list_value(items: List[Any]) -> str:
+    """A list of scalars -> one "- " bullet per item; a list containing a
+    dict/list -> that item rendered recursively, indented under its own "- "
+    bullet. Empty/blank items are dropped."""
     lines = []
-    for tr in _d4d_find_all(n, "tr"):
-        tds = _d4d_find_all(tr, "td")
-        if not tds:  # header row, already captured via <th> above
-            continue
-        cells = [_d4d_render_children(td.children).strip() for td in tds]
-        if header_cells and len(header_cells) == len(cells):
-            row = "; ".join(f"{h}: {v}" for h, v in zip(header_cells, cells) if v)
+    for item in items:
+        if isinstance(item, (dict, list)):
+            rendered = _d4d_render_value(item)
+            if not rendered:
+                continue
+            sub_lines = rendered.split("\n")
+            lines.append(f"- {sub_lines[0]}")
+            lines.extend(f"  {sub}" for sub in sub_lines[1:])
         else:
-            row = "; ".join(v for v in cells if v)
-        lines.append(f"- {row}")
-    return "\n".join(lines) + ("\n" if lines else "")
-
-
-def _d4d_render_dl_inline(dl: _D4DNode) -> str:
-    """Render a <dl class="nested-dict"> as "Key: value; Key2: value2"."""
-    dts = _d4d_find_all(dl, "dt")
-    dds = _d4d_find_all(dl, "dd")
-    pairs = [
-        f"{_d4d_text_of(dt)}: {_d4d_render_children(dd.children).strip()}"
-        for dt, dd in zip(dts, dds)
-    ]
-    return "; ".join(pairs)
-
-
-def _d4d_render_list(n: _D4DNode) -> str:
-    """Render a <ul|ol class="formatted-list"> as a "- " bullet per <li>,
-    with a nested <dl> rendered inline on that bullet's line."""
-    lines = []
-    for li in n.children:
-        if isinstance(li, str) or li.tag != "li":
-            continue
-        dls = [c for c in li.children if not isinstance(c, str) and c.tag == "dl"]
-        if dls:
-            for dl in dls:
-                lines.append(f"- {_d4d_render_dl_inline(dl)}")
-        else:
-            text = _d4d_render_children(li.children).strip()
+            text = _d4d_render_value(item)
             if text:
                 lines.append(f"- {text}")
-    return "\n".join(lines) + ("\n" if lines else "")
+    return "\n".join(lines)
 
 
-def _d4d_render_children(children: List[Any]) -> str:
-    return "".join(_d4d_render_node(c) for c in children)
-
-
-def _d4d_render_node(n: Any) -> str:
-    """Render one node (and its subtree) to readable text/markdown.
-
-    Keeps link text (as a markdown link), converts tables/lists to simple
-    rows, and falls through to plain concatenated text for everything else.
-    """
-    if isinstance(n, str):
-        return n
-    tag = n.tag
-    if tag == "a":
-        href = n.attrs.get("href", "")
-        text = _d4d_text_of(n)
-        return f"[{text}]({href})" if href else text
-    if tag == "table":
-        return _d4d_render_table(n)
-    if tag in ("ul", "ol"):
-        return _d4d_render_list(n)
-    if tag == "dl":
-        return _d4d_render_dl_inline(n) + "\n"
-    if tag == "br":
-        return "\n"
-    if tag in ("div", "p"):
-        return _d4d_render_children(n.children) + "\n"
-    return _d4d_render_children(n.children)
-
-
-def _d4d_slugify(text: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return slug or "section"
-
-
-def _parse_d4d_document(html_text: str) -> Dict[str, Any]:
-    """Parse one D4D HTML document into {"title": str, "sections": [...]}.
-
-    Each section is {"id", "heading", "description", "text"} where `text` is
-    the section's full rendered content (heading/description not repeated
-    inside `text` beyond the description line, so callers can present the
-    heading themselves).
-    """
-    builder = _D4DTreeBuilder()
-    builder.feed(html_text)
-    root = builder.root
-
-    h1s = _d4d_find_all(root, "h1")
-    title = _d4d_text_of(h1s[0]) if h1s else ""
-
-    sections = []
-    for sec in _d4d_find_all_class(root, "div", "section"):
-        h2s = _d4d_find_all_class(sec, "h2", "section-title")
-        heading = _d4d_text_of(h2s[0]) if h2s else "Untitled"
-        desc_nodes = _d4d_find_all_class(sec, "p", "section-description")
-        description = _d4d_text_of(desc_nodes[0]) if desc_nodes else ""
-
-        lines = []
-        if description:
-            lines.append(description)
-            lines.append("")
-        for item in _d4d_find_all_class(sec, "div", "data-item"):
-            labels = _d4d_find_all_class(item, "label", "item-label")
-            label = _d4d_label_text(labels[0]) if labels else ""
-            values = _d4d_find_all_class(item, "div", "item-value")
-            value = _d4d_render_children(values[0].children).strip() if values else ""
-            if not label and not value:
+def _d4d_render_dict_value(d: Dict[str, Any]) -> str:
+    """A dict with only scalar values -> one "Key: value; Key2: value2" line.
+    A dict with any nested list/dict value -> multi-line, with each nested
+    value rendered recursively and indented under its own "Key:" line. Empty
+    or null values are dropped either way."""
+    if not any(isinstance(v, (dict, list)) for v in d.values()):
+        parts = [
+            f"{_d4d_key_label(k)}: {_d4d_render_value(v)}"
+            for k, v in d.items() if not (v is None or v == "")
+        ]
+        return "; ".join(parts)
+    lines = []
+    for k, v in d.items():
+        if v is None or v == "":
+            continue
+        if isinstance(v, (dict, list)):
+            rendered = _d4d_render_value(v)
+            if not rendered:
                 continue
-            if label:
-                lines.append(f"**{label}**")
-            lines.append(value)
-            lines.append("")
-        text = "\n".join(lines).strip() + "\n"
+            lines.append(f"{_d4d_key_label(k)}:")
+            lines.extend(f"  {sub}" for sub in rendered.split("\n"))
+        else:
+            lines.append(f"{_d4d_key_label(k)}: {_d4d_render_value(v)}")
+    return "\n".join(lines)
 
-        sections.append({
-            "id": _d4d_slugify(heading),
-            "heading": heading,
-            "description": description,
-            "text": text,
-        })
 
-    return {"title": title, "sections": sections}
+def _d4d_render_value(value: Any) -> str:
+    """Render one JSON value (scalar, list, or dict -- arbitrarily nested)
+    into compact, readable text. `stdlib` `json` only produces these 4 kinds
+    of values (plus bool/None, handled as scalars), so this covers every
+    value `d4d_data.json` can contain."""
+    if value is None:
+        return ""
+    if isinstance(value, (bool, int, float, str)):
+        return str(value)
+    if isinstance(value, list):
+        return _d4d_render_list_value(value)
+    if isinstance(value, dict):
+        return _d4d_render_dict_value(value)
+    return str(value)  # pragma: no cover -- unreachable for JSON-decoded input
+
+
+def _d4d_normalize_field_name(name: str) -> str:
+    """Case/spacing-insensitive normal form for field matching: lowercase,
+    "_" and whitespace runs both collapse to a single space, e.g.
+    "Distribution_Formats" and "distribution formats" both normalize to
+    "distribution formats"."""
+    return " ".join(str(name).strip().lower().replace("_", " ").split())
+
+
+def _build_d4d_field_index(fields_meta: Dict[str, Any]) -> Dict[str, str]:
+    index: Dict[str, str] = {}
+    for key, meta in fields_meta.items():
+        index[_d4d_normalize_field_name(key)] = key
+        label = (meta or {}).get("label")
+        if label:
+            index[_d4d_normalize_field_name(label)] = key
+    return index
+
+
+def _d4d_resolve_field(name: str) -> Optional[str]:
+    """Resolve a caller-supplied field name (the key or the label, any case,
+    "_"/space-insensitive) to its canonical field key, or None if unknown."""
+    return _D4D_FIELD_INDEX.get(_d4d_normalize_field_name(name))
+
+
+def _d4d_section_key(value: Optional[str]) -> str:
+    """Normalize a section id -- or a field's `schemaSection` value -- into
+    the same slug form (lowercase, non-alphanumerics -> "-"), e.g.
+    "Preprocessing-Cleaning-Labeling" and "preprocessing-cleaning-labeling"
+    both normalize to the latter.
+
+    Section ids in `d4d_data.json` are already supposed to be slugs, but a
+    field's `schemaSection` isn't independently validated against that --
+    normalizing both sides before comparing means a `schemaSection` that
+    (incorrectly) carries the section's heading text instead of its slug id
+    still resolves to the right section instead of silently vanishing from
+    every section (it would still be reachable via `getD4D(orgId, field=)`,
+    but never grouped into an outline/section/search result)."""
+    return re.sub(r"[^a-z0-9]+", "-", str(value or "other").lower()).strip("-") or "other"
 
 
 def _ensure_d4d_loaded() -> None:
-    """Fetch and parse every D4D HTML row once per warm Lambda container.
+    """Load `d4d_data.json` once per warm Lambda container, pre-rendering
+    every doc's fields (`_d4d_render_value`) and grouping them into their
+    schema sections (contract order, only sections with >=1 present field)
+    so later calls just slice already-rendered text.
 
-    `_D4D_LOADED` is only set once at least one row parsed into a usable
-    document -- never unconditionally after the fetch. Setting it
-    unconditionally would poison the warm-container cache: a transient
-    Synapse hiccup (or a query that simply comes back with zero/unusable
-    rows) would still mark D4D data as "loaded", and every D4D call for the
-    rest of that container's lifetime would then see an empty `_D4D_DOCS`
-    and report "no content available" instead of ever retrying.
+    `_D4D_LOADED` is only set once at least one doc rendered into a usable
+    document (`rendered_docs` non-empty) -- never unconditionally after the
+    read. That keeps a warm container able to retry: an empty/malformed
+    `docs` object (or a not-yet-deployed data file, in a dev/test setup)
+    leaves `_D4D_DOCS` empty and `_D4D_LOADED` False rather than poisoning
+    the cache for the rest of the container's lifetime. A read/parse error
+    (missing file, invalid JSON) propagates instead of being swallowed here
+    -- callers (list_d4ds/get_d4d/search_d4d/compare_d4d) already wrap this
+    call in a try/except that turns it into an `{"error": ...}` response.
     """
     global _D4D_LOADED
     if _D4D_LOADED:
         return
-    syn_id = TABLES["d4d"]
-    sql = f"SELECT content_id, content_type, content_text FROM {syn_id} WHERE content_type = 'html'"
-    bundle = _run_query(_bare_id(syn_id), sql, len(GC_ORG_IDS) + 1, PART_RESULTS)
-    loaded_any = False
-    for row in _parse_bundle(bundle)["rows"]:
-        org_id = row.get("content_id")
-        html_text = row.get("content_text")
-        if not org_id or not html_text:
-            continue
-        _D4D_DOCS[org_id] = _parse_d4d_document(html_text)
-        loaded_any = True
-    if loaded_any:
+
+    with open(_D4D_DATA_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    fields_meta_raw = data.get("fields") or {}
+    sections_meta = data.get("sections") or []
+    docs = data.get("docs") or {}
+
+    # Normalize every field's `schemaSection` to a section-id slug up front
+    # (see `_d4d_section_key`), falling back to "other" for anything that
+    # doesn't resolve to a real section -- so every later lookup can compare
+    # normalized-to-normalized instead of re-deriving this per doc.
+    section_keys = {_d4d_section_key(sec.get("id")) for sec in sections_meta}
+    fields_meta: Dict[str, Any] = {}
+    for key, meta in fields_meta_raw.items():
+        meta = meta or {}
+        section_key = _d4d_section_key(meta.get("schemaSection"))
+        if section_key not in section_keys:
+            section_key = "other"
+        fields_meta[key] = dict(meta, schemaSection=section_key)
+
+    rendered_docs: Dict[str, Dict[str, Any]] = {}
+    for org_id, doc in docs.items():
+        doc_data = doc.get("data") or {}
+        fields: Dict[str, Dict[str, Any]] = {}
+        for key, meta in fields_meta.items():
+            if key not in doc_data:
+                continue
+            text = _d4d_render_value(doc_data[key])
+            if not text:
+                continue
+            fields[key] = dict(meta, text=text)
+
+        sections = []
+        for sec in sections_meta:
+            sec_id = sec.get("id")
+            sec_key = _d4d_section_key(sec_id)
+            field_keys = [key for key, meta in fields.items() if meta["schemaSection"] == sec_key]
+            if not field_keys:
+                continue
+            blocks = [f"### {fields[key]['label']}\n{fields[key]['text']}" for key in field_keys]
+            sections.append({
+                "id": sec_id,
+                "heading": sec.get("heading", sec_id),
+                "description": sec.get("description", ""),
+                "fieldKeys": field_keys,
+                "text": "\n\n".join(blocks) + "\n",
+            })
+
+        if fields:
+            rendered_docs[org_id] = {
+                "title": doc.get("title", ""),
+                "fields": fields,
+                "sections": sections,
+            }
+
+    if rendered_docs:
+        source = data.get("source") or {}
+        _D4D_DOCS.clear()
+        _D4D_DOCS.update(rendered_docs)
+        _D4D_SOURCE.clear()
+        _D4D_SOURCE.update({k: source[k] for k in _D4D_SOURCE_KEYS if source.get(k) is not None})
+        _D4D_FIELDS.clear()
+        _D4D_FIELDS.update(fields_meta)
+        _D4D_FIELD_INDEX.clear()
+        _D4D_FIELD_INDEX.update(_build_d4d_field_index(fields_meta))
         _D4D_LOADED = True
 
 
@@ -1282,8 +1215,16 @@ def _d4d_org_link(org_id: str) -> str:
     return f"/Explore/Organization/OrganizationDetailsPage?id={org_id}"
 
 
+def _d4d_clamp_offset(offset: Any) -> int:
+    try:
+        return max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def list_d4ds(params: Dict[str, Any]) -> Dict[str, Any]:
-    """The Grand Challenge orgs that have a D4D: id, name, detail-page link."""
+    """The Grand Challenge orgs that have a D4D: id, name, detail-page link,
+    plus the pinned D4D source (`source`)."""
     try:
         _ensure_d4d_loaded()
         _ensure_d4d_org_names_loaded()
@@ -1301,66 +1242,74 @@ def list_d4ds(params: Dict[str, Any]) -> Dict[str, Any]:
             "title": doc.get("title", ""),
             "link": _d4d_org_link(org_id),
         })
-    return {"d4ds": items}
+    return {"d4ds": items, "source": dict(_D4D_SOURCE)}
 
 
-def get_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Without `section`: an outline (title + section ids/headings/sizes).
-    With `section`: that section's text, paged under D4D_SECTION_BUDGET."""
-    org_id = params.get("orgId")
-    if not org_id:
-        return {"error": "orgId is required"}
+def _d4d_outline_size(outline: Dict[str, Any]) -> int:
+    return len(json.dumps(outline))
 
-    try:
-        _ensure_d4d_loaded()
-        _ensure_d4d_org_names_loaded()
-    except Exception as e:
-        return {"error": f"Failed to load D4D data: {e}"}
 
-    if org_id not in GC_ORG_IDS:
-        return {
-            "error": (
-                f"Unknown orgId {org_id!r}. Grand Challenge orgs with a D4D: "
-                f"{', '.join(GC_ORG_IDS)}."
-            )
-        }
+def _d4d_fit_outline(outline: Dict[str, Any]) -> Dict[str, Any]:
+    """Trim per-section `fields` entries -- from whichever section currently
+    has the most of them, one at a time -- until the whole outline
+    serializes under D4D_OUTLINE_BUDGET, flagging every section that lost
+    entries with `fieldsTruncated: true`.
 
-    doc = _D4D_DOCS.get(org_id)
-    if not doc or not doc.get("sections"):
-        return {"error": f"No D4D content is available for {org_id}."}
+    Outline field entries carry no rendered text (just id/label/size/
+    portalSection), so this only ever engages for a doc with an unusually
+    large number of fields -- normal-sized D4D docs fit comfortably and this
+    is a no-op for them.
+    """
+    while _d4d_outline_size(outline) > D4D_OUTLINE_BUDGET:
+        candidates = [s for s in outline["sections"] if s["fields"]]
+        if not candidates:
+            break  # already as small as it can get; return what we have
+        target = max(candidates, key=lambda s: len(s["fields"]))
+        target["fields"].pop()
+        target["fieldsTruncated"] = True
+    return outline
 
-    org_name = _D4D_ORG_NAMES.get(org_id, org_id)
-    org_link = _d4d_org_link(org_id)
 
-    section_id = params.get("section")
-    if not section_id:
-        return {
-            "orgId": org_id,
-            "orgName": org_name,
-            "orgLink": org_link,
-            "title": doc.get("title", ""),
-            "sections": [
-                {
-                    "id": s["id"],
-                    "heading": s["heading"],
-                    "description": s.get("description", ""),
-                    "size": len(s["text"]),
-                }
-                for s in doc["sections"]
-            ],
-        }
+def _get_d4d_outline(org_id: str, org_name: str, org_link: str, doc: Dict[str, Any]) -> Dict[str, Any]:
+    sections = []
+    for sec in doc["sections"]:
+        fields = [
+            {
+                "id": key,
+                "label": doc["fields"][key]["label"],
+                "size": len(doc["fields"][key]["text"]),
+                "portalSection": doc["fields"][key].get("portalSection"),
+            }
+            for key in sec["fieldKeys"]
+        ]
+        sections.append({
+            "id": sec["id"],
+            "heading": sec["heading"],
+            "description": sec.get("description", ""),
+            "size": len(sec["text"]),
+            "fields": fields,
+            "fieldsTruncated": False,
+        })
+    outline = {
+        "orgId": org_id,
+        "orgName": org_name,
+        "orgLink": org_link,
+        "title": doc.get("title", ""),
+        "source": dict(_D4D_SOURCE),
+        "sections": sections,
+    }
+    return _d4d_fit_outline(outline)
 
+
+def _get_d4d_section(
+    org_id: str, org_name: str, org_link: str, doc: Dict[str, Any], section_id: str, offset: Any
+) -> Dict[str, Any]:
     section = next((s for s in doc["sections"] if s["id"] == section_id), None)
     if section is None:
         valid = ", ".join(s["id"] for s in doc["sections"])
         return {"error": f"Unknown section {section_id!r} for {org_id}. Valid sections: {valid}."}
 
-    offset = params.get("offset") or 0
-    try:
-        offset = max(0, int(offset))
-    except (TypeError, ValueError):
-        offset = 0
-
+    offset = _d4d_clamp_offset(offset)
     text = section["text"]
     chunk = text[offset:offset + D4D_SECTION_BUDGET]
     result = {
@@ -1378,16 +1327,145 @@ def get_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _get_d4d_field(org_id: str, doc: Dict[str, Any], field_name: str, offset: Any) -> Dict[str, Any]:
+    field_key = _d4d_resolve_field(field_name)
+    field = doc["fields"].get(field_key) if field_key else None
+    if field is None:
+        valid = ", ".join(sorted(doc["fields"]))
+        return {"error": f"Unknown field {field_name!r} for {org_id}. Valid fields: {valid}."}
+
+    offset = _d4d_clamp_offset(offset)
+    text = field["text"]
+    chunk = text[offset:offset + D4D_SECTION_BUDGET]
+    result = {
+        "orgId": org_id,
+        "field": field_key,
+        "label": field["label"],
+        "description": field.get("description"),
+        "schemaSection": field.get("schemaSection") or "other",
+        "portalSection": field.get("portalSection"),
+        "inSchema": bool(field.get("inSchema")),
+        "text": chunk,
+    }
+    next_offset = offset + len(chunk)
+    if next_offset < len(text):
+        result["nextOffset"] = next_offset
+    return result
+
+
+def get_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Without `section`/`field`: an outline (title, source, and each
+    section's id/heading/description/size plus its fields' id/label/size/
+    portalSection). With `section`: that section's fields rendered as text,
+    paged under D4D_SECTION_BUDGET. With `field`: that one field's text
+    (also paged). `section` and `field` may not both be given."""
+    org_id = params.get("orgId")
+    if not org_id:
+        return {"error": "orgId is required"}
+
+    section_id = params.get("section")
+    field_name = params.get("field")
+    if section_id and field_name:
+        return {"error": "Provide either section or field, not both."}
+
+    try:
+        _ensure_d4d_loaded()
+    except Exception as e:
+        return {"error": f"Failed to load D4D data: {e}"}
+
+    if org_id not in GC_ORG_IDS:
+        return {
+            "error": (
+                f"Unknown orgId {org_id!r}. Grand Challenge orgs with a D4D: "
+                f"{', '.join(GC_ORG_IDS)}."
+            )
+        }
+
+    doc = _D4D_DOCS.get(org_id)
+    if not doc or not doc.get("sections"):
+        return {"error": f"No D4D content is available for {org_id}."}
+
+    if field_name:
+        return _get_d4d_field(org_id, doc, field_name, params.get("offset"))
+
+    try:
+        _ensure_d4d_org_names_loaded()
+    except Exception as e:
+        return {"error": f"Failed to load D4D data: {e}"}
+    org_name = _D4D_ORG_NAMES.get(org_id, org_id)
+    org_link = _d4d_org_link(org_id)
+
+    if not section_id:
+        return _get_d4d_outline(org_id, org_name, org_link, doc)
+    return _get_d4d_section(org_id, org_name, org_link, doc, section_id, params.get("offset"))
+
+
+def compare_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Compare one field across all 4 Grand Challenges' D4Ds: for each org,
+    whether it's present and (a capped slice of) its rendered text, plus the
+    field's shared metadata. Per-org text is capped so the whole response
+    stays under D4D_SECTION_BUDGET."""
+    field_name = params.get("field")
+    if not field_name:
+        return {"error": "field is required"}
+
+    try:
+        _ensure_d4d_loaded()
+        _ensure_d4d_org_names_loaded()
+    except Exception as e:
+        return {"error": f"Failed to load D4D data: {e}"}
+
+    field_key = _d4d_resolve_field(field_name)
+    if field_key is None:
+        valid = ", ".join(sorted(_D4D_FIELDS))
+        return {"error": f"Unknown field {field_name!r}. Valid fields: {valid}."}
+
+    meta = _D4D_FIELDS[field_key]
+    per_org_budget = max(1, D4D_SECTION_BUDGET // len(GC_ORG_IDS))
+
+    orgs = []
+    for org_id in GC_ORG_IDS:
+        doc = _D4D_DOCS.get(org_id)
+        field = doc["fields"].get(field_key) if doc else None
+        if field is None:
+            orgs.append({
+                "orgId": org_id,
+                "name": _D4D_ORG_NAMES.get(org_id, org_id),
+                "present": False,
+                "text": "",
+                "truncated": False,
+            })
+            continue
+        text = field["text"]
+        orgs.append({
+            "orgId": org_id,
+            "name": _D4D_ORG_NAMES.get(org_id, org_id),
+            "present": True,
+            "text": text[:per_org_budget],
+            "truncated": len(text) > per_org_budget,
+        })
+
+    return {
+        "field": field_key,
+        "label": meta.get("label") or field_key,
+        "description": meta.get("description"),
+        "schemaSection": meta.get("schemaSection") or "other",
+        "portalSection": meta.get("portalSection"),
+        "orgs": orgs,
+    }
+
+
 def search_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Case-insensitive keyword search across one or all D4Ds, returning at
-    most D4D_MAX_SNIPPETS section-labelled snippets."""
+    """Case-insensitive keyword search (against rendered field text and
+    labels) across one or all D4Ds, returning at most D4D_MAX_SNIPPETS
+    hits -- at most one per field, so a field matched only in its label
+    still surfaces (with a snippet from the start of its text)."""
     query = params.get("query")
     if not query or not isinstance(query, str):
         return {"error": "query is required"}
 
     try:
         _ensure_d4d_loaded()
-        _ensure_d4d_org_names_loaded()
     except Exception as e:
         return {"error": f"Failed to load D4D data: {e}"}
 
@@ -1407,27 +1485,33 @@ def search_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
         doc = _D4D_DOCS.get(oid)
         if not doc:
             continue
-        for section in doc.get("sections", []):
-            text = section["text"]
-            lower = text.lower()
-            start = 0
-            while len(hits) < D4D_MAX_SNIPPETS:
-                idx = lower.find(needle, start)
-                if idx == -1:
+        for section in doc["sections"]:
+            if len(hits) >= D4D_MAX_SNIPPETS:
+                break
+            for key in section["fieldKeys"]:
+                if len(hits) >= D4D_MAX_SNIPPETS:
                     break
+                field = doc["fields"][key]
+                text = field["text"]
+                label = field["label"]
+                lower_text = text.lower()
+                if needle in label.lower():
+                    idx = 0
+                else:
+                    idx = lower_text.find(needle)
+                    if idx == -1:
+                        continue
                 snippet_start = max(0, idx - 80)
                 snippet_end = min(len(text), idx + len(needle) + 220)
                 snippet = text[snippet_start:snippet_end].strip()[:D4D_SNIPPET_CHARS]
                 hits.append({
                     "orgId": oid,
-                    "orgName": _D4D_ORG_NAMES.get(oid, oid),
                     "section": section["id"],
                     "heading": section["heading"],
+                    "field": key,
+                    "label": label,
                     "snippet": snippet,
                 })
-                start = idx + max(len(needle), 1)
-            if len(hits) >= D4D_MAX_SNIPPETS:
-                break
         if len(hits) >= D4D_MAX_SNIPPETS:
             break
 

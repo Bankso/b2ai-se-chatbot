@@ -1,0 +1,15 @@
+{
+  "repo": "bridge2ai/data-sheets-schema",
+  "ref": "main",
+  "runtime": "api",
+  "variant": "full",
+  "synapseTable": "syn68885644.13",
+  "schema": "src/data_sheets_schema/schema/data_sheets_schema_all.yaml",
+  "renderer": "src/data_sheets_schema/rendering/human_readable_renderer.py",
+  "orgs": {
+    "AI_READI": "B2AI_ORG:114",
+    "CHORUS": "B2AI_ORG:115",
+    "CM4AI": "B2AI_ORG:116",
+    "VOICE": "B2AI_ORG:117"
+  }
+}

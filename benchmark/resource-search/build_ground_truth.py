@@ -1016,7 +1016,12 @@ def rs_redirect_forbidden_multiword():
 
 @item
 def rs_d4d_section_fact():
-    r = lf.get_d4d({"orgId": "B2AI_ORG:116", "section": "human-subjects"})
+    # There is no dedicated "human subjects" section in the D4D schema --
+    # human-subjects-research content is a top-level field
+    # (schemaSection "other"), so this must be a field-based getD4D call,
+    # not a section-based one.
+    field = "human_subject_research"
+    r = lf.get_d4d({"orgId": "B2AI_ORG:116", "field": field})
     assert "Involves Human Subjects: False" in r["text"]
     return {
         "id": "rs-d4d-section-fact",
@@ -1024,8 +1029,9 @@ def rs_d4d_section_fact():
         "question": "Does the CM4AI Grand Challenge's dataset involve human subjects?",
         "persona": "PATIENT",
         "notes": (
-            "Single-GC D4D section fact. Confirmed live: getD4D(B2AI_ORG:116, section='human-subjects') "
-            "text includes 'Involves Human Subjects: False' (non-clinical cell-line data)."
+            "Single-GC D4D field fact. Confirmed live: getD4D(B2AI_ORG:116, field='human_subject_research') "
+            "text includes 'Involves Human Subjects: False' (non-clinical cell-line data). This field's "
+            "schemaSection is 'other' -- there is no dedicated 'human subjects' section in the D4D schema."
         ),
         "expected_tool_calls": [
             {"function": "listD4Ds", "required": False, "constraints": {}},
@@ -1035,12 +1041,12 @@ def rs_d4d_section_fact():
             },
             {
                 "function": "getD4D",
-                "constraints": {"orgId": "B2AI_ORG:116", "section": "human-subjects"},
+                "constraints": {"orgId": "B2AI_ORG:116", "field": field},
             },
         ],
         "expected_answer": {
             "org_id": "B2AI_ORG:116",
-            "section": "human-subjects",
+            "field": field,
             "involves_human_subjects": False,
             "text_contains": "Involves Human Subjects: False",
         },
@@ -1053,7 +1059,8 @@ def rs_d4d_section_fact():
 def rs_d4d_cross_gc_search():
     r = lf.search_d4d({"query": "consent"})
     orgs = sorted({h["orgId"] for h in r["results"]})
-    assert orgs == ["B2AI_ORG:114", "B2AI_ORG:116", "B2AI_ORG:117"], orgs
+    non_matching = sorted(set(lf.GC_ORG_IDS) - set(orgs))
+    assert orgs == ["B2AI_ORG:114", "B2AI_ORG:117"], orgs
     return {
         "id": "rs-d4d-cross-gc-consent",
         "category": "d4d",
@@ -1061,9 +1068,9 @@ def rs_d4d_cross_gc_search():
         "persona": "PATIENT",
         "notes": (
             "Cross-GC comparison -- must use searchD4D, not getD4D on one org. Confirmed live: "
-            "'consent' hits AI-READI (114), CM4AI (116), and Voice (117), but NOT CHoRUS (115), which "
-            "discusses IRB/ethics oversight without the literal word 'consent'. A correct answer "
-            "names exactly these 3 GCs, not all 4."
+            "'consent' hits AI-READI (114) and Voice (117), but NOT CHoRUS (115) or CM4AI (116), whose "
+            "rendered D4D field text doesn't contain the literal word 'consent'. A correct answer "
+            "names exactly these 2 GCs, not all 4."
         ),
         "expected_tool_calls": [
             {
@@ -1073,7 +1080,7 @@ def rs_d4d_cross_gc_search():
         ],
         "expected_answer": {
             "matching_org_ids": orgs,
-            "non_matching_org_ids": ["B2AI_ORG:115"],
+            "non_matching_org_ids": non_matching,
         },
         "ground_truth_query": None,
         "llm_judge_fallback": True,
@@ -1090,9 +1097,11 @@ def rs_d4d_outline():
         "question": "Give me an overview of the AI-READI Grand Challenge's dataset datasheet (D4D).",
         "persona": "RESEARCHER",
         "notes": (
-            "Outline request -- getD4D with no `section` returns the outline (7 flat sections: "
-            "motivation, composition, collection-process, uses, distribution, maintenance, "
-            "human-subjects -- confirmed live, no 'Preprocessing' section exists here)."
+            "Outline request -- getD4D with no `section`/`field` returns the outline. Section ids are "
+            "D4D-schema section slugs (a subset of motivation/composition/collection/"
+            "preprocessing-cleaning-labeling/uses/distribution/maintenance/ethics/datagovernance/other, "
+            "only the ones with >=1 present field) -- derived live below rather than hardcoded, since "
+            "which sections are non-empty varies by org."
         ),
         "expected_tool_calls": [
             {"function": "listD4Ds", "required": False, "constraints": {}},

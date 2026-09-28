@@ -251,7 +251,7 @@
   {
     "session_id": "d4d-cm4ai-overview",
     "session_type": "RAG",
-    "description": "D4D overview for the Functional Genomics GC, then Motivation and Human Subjects sections",
+    "description": "D4D overview for the Functional Genomics GC, then Motivation and Human Subjects details",
     "n_turns": 3,
     "turns": [
       {
@@ -259,7 +259,7 @@
         "question": "Can you give me an overview of the Functional Genomics Grand Challenge's dataset documentation?",
         "expected": "RAG",
         "persona": "REUSER",
-        "notes": "Live listD4Ds/getD4D(B2AI_ORG:116) outline: title 'CM4AI Dataset Documentation', 7 sections (Motivation, Composition, Collection Process, Uses, Distribution, Maintenance, Human Subjects)."
+        "notes": "Live listD4Ds/getD4D(B2AI_ORG:116) outline: title 'CM4AI Dataset Documentation', 9 sections (Motivation, Composition, Collection, Uses, Distribution, Maintenance, Ethics, Data Governance, Other -- Human Subjects content now lives in the human_subject_research field under Other)."
       },
       {
         "id": "d4d-cm4ai-overview-t2",
@@ -273,7 +273,7 @@
         "question": "Does the D4D say whether this dataset involves human subjects research?",
         "expected": "RAG",
         "persona": "REUSER",
-        "notes": "Live getD4D(B2AI_ORG:116, section='human-subjects'): 'Involves Human Subjects: False' -- data are from de-identified, non-clinical tissue-culture cell lines (MDA-MB-468 from ATCC, KOLF2.1J from HipSci with donor consent for research use), not directly from human subjects."
+        "notes": "Live getD4D(B2AI_ORG:116, field='human_subject_research'): 'Involves Human Subjects: False' -- data are from de-identified, non-clinical tissue-culture cell lines (MDA-MB-468 from ATCC, KOLF2.1J from HipSci with donor consent for research use), not directly from human subjects."
       }
     ]
   },
@@ -288,7 +288,7 @@
         "question": "I took part in the Voice study -- what's covered in the Precision Public Health Grand Challenge's dataset documentation?",
         "expected": "RAG",
         "persona": "PATIENT",
-        "notes": "Live listD4Ds/getD4D(B2AI_ORG:117) outline: title 'VOICE Dataset Documentation', same 7-section structure as the other GCs."
+        "notes": "Live listD4Ds/getD4D(B2AI_ORG:117) outline: title 'VOICE Dataset Documentation', same 10-section structure as AI-READI/CHoRUS (CM4AI has 9 -- no preprocessing-cleaning-labeling section)."
       },
       {
         "id": "d4d-voice-composition-t2",
@@ -310,14 +310,14 @@
         "question": "Which Grand Challenges' dataset documentation mentions participant consent?",
         "expected": "RAG",
         "persona": "CONTRIBUTOR",
-        "notes": "Live searchD4D(query='consent', all orgs): hits in Salutogenesis GC (B2AI_ORG:114, collection-process and human-subjects sections), Functional Genomics GC (B2AI_ORG:116, human-subjects), and Precision Public Health GC (B2AI_ORG:117, composition and collection-process)."
+        "notes": "Live searchD4D(query='consent', all orgs): hits in Salutogenesis GC (B2AI_ORG:114, collection section and human_subject_research field), Functional Genomics GC (B2AI_ORG:116, human_subject_research field), and Precision Public Health GC (B2AI_ORG:117, composition and collection sections)."
       },
       {
         "id": "d4d-cross-gc-consent-t2",
         "question": "What does the Salutogenesis Grand Challenge's Human Subjects section say about consent specifically?",
         "expected": "RAG",
         "persona": "CONTRIBUTOR",
-        "notes": "Live getD4D(B2AI_ORG:114, section='human-subjects') snippet: written informed consent provided by all participants; a Community Advisory Board of 11 people with diversity in race/ethnicity contributes to protocol development."
+        "notes": "Live getD4D(B2AI_ORG:114, field='human_subject_research') snippet: written informed consent provided by all participants; a Community Advisory Board of 11 people with diversity in race/ethnicity contributes to protocol development."
       },
       {
         "id": "d4d-cross-gc-consent-t3",
@@ -331,7 +331,7 @@
   {
     "session_id": "d4d-ai-readi-collection",
     "session_type": "RAG",
-    "description": "Collection-process detail for the Salutogenesis GC, then a follow-up on biospecimen retention",
+    "description": "Collection detail for the Salutogenesis GC, then a follow-up on biospecimen retention",
     "n_turns": 2,
     "turns": [
       {
@@ -339,14 +339,14 @@
         "question": "How was the data collected for the Salutogenesis Grand Challenge's AI-READI dataset?",
         "expected": "RAG",
         "persona": "REUSER",
-        "notes": "Live getD4D(B2AI_ORG:114, section='collection-process'): AI-READI is a flagship dataset of multimodal data from 4,000 individuals with/without Type 2 Diabetes, harmonized across 3 sites (Birmingham AL, San Diego CA, Seattle WA), with recruitment triple-balanced by race/ethnicity, sex, and T2DM severity."
+        "notes": "Live getD4D(B2AI_ORG:114, section='collection'): AI-READI is a flagship dataset of multimodal data from 4,000 individuals with/without Type 2 Diabetes, harmonized across 3 sites (Birmingham AL, San Diego CA, Seattle WA), with recruitment triple-balanced by race/ethnicity, sex, and T2DM severity."
       },
       {
         "id": "d4d-ai-readi-collection-t2",
         "question": "Does that section say anything about how long biospecimens will be retained?",
         "expected": "RAG",
         "persona": "REUSER",
-        "notes": "Live getD4D(B2AI_ORG:114, section='collection-process') Retention Details: biospecimen retention subject to institutional policies and consent agreements, with a finite number of biospecimen samples available for distribution."
+        "notes": "Live getD4D(B2AI_ORG:114, section='collection') Retention Details: biospecimen retention subject to institutional policies and consent agreements, with a finite number of biospecimen samples available for distribution."
       }
     ]
   },
@@ -714,14 +714,14 @@
         "question": "Switching gears -- can you tell me about the Functional Genomics Grand Challenge's dataset documentation?",
         "expected": "RAG",
         "persona": "FUNDER",
-        "notes": "Live listD4Ds/getD4D(B2AI_ORG:116) outline: title 'CM4AI Dataset Documentation', 7 sections."
+        "notes": "Live listD4Ds/getD4D(B2AI_ORG:116) outline: title 'CM4AI Dataset Documentation', 9 sections."
       },
       {
         "id": "e2e-full-flow-t6",
         "question": "What does the Collection Process section cover?",
         "expected": "RAG",
         "persona": "FUNDER",
-        "notes": "Live getD4D(B2AI_ORG:116, section='collection-process'): CM4AI March 2025 Beta release -- perturb-seq data in KOLF2.1J iPSCs, SEC-MS data, and IF imaging in MDA-MB-468 breast cancer cells; a collaboration of UCSD, UCSF, Stanford, UVA, Yale, UA Birmingham, Simon Fraser University, and the Hastings Center."
+        "notes": "Live getD4D(B2AI_ORG:116, section='collection'): CM4AI March 2025 Beta release -- perturb-seq data in KOLF2.1J iPSCs, SEC-MS data, and IF imaging in MDA-MB-468 breast cancer cells; a collaboration of UCSD, UCSF, Stanford, UVA, Yale, UA Birmingham, Simon Fraser University, and the Hastings Center."
       },
       {
         "id": "e2e-full-flow-t7",

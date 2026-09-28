@@ -53,7 +53,8 @@ The stacks are named `b2ai-copilot-sql-dev` and `b2ai-copilot-sql-prod`.
 | `countByType` | Row counts across all 7 tables |
 | `buildPortalUrl` | Build a portal path for a Standard/Organization/DataTopic Detail Page, or the Standards search tab (with optional `searchTerm`/`facets`) |
 | `listD4Ds` | List the 4 Bridge2AI Grand Challenge orgs that have a D4D (Datasheet for Dataset) |
-| `getD4D` | Get a Grand Challenge's D4D outline, or one section's text (paged) |
+| `getD4D` | Get a Grand Challenge's D4D outline, one section's text, or one field's text (paged) |
+| `compareD4D` | Get one D4D field's text from all 4 Grand Challenges in a single call |
 | `searchD4D` | Keyword search across one or all D4Ds |
 
 #### The table allowlist and version pinning

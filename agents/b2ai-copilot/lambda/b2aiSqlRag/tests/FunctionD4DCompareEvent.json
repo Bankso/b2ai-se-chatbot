@@ -1,0 +1,16 @@
+{
+  "messageVersion": "1.0",
+  "agent": {
+    "name": "b2ai-sql-agent",
+    "version": "test"
+  },
+  "actionGroup": "b2aiSqlRag",
+  "function": "compareD4D",
+  "parameters": [
+    {
+      "name": "field",
+      "type": "string",
+      "value": "distribution_formats"
+    }
+  ]
+}

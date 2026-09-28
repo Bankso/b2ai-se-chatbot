@@ -543,6 +543,81 @@ def test_search_d4d_cross_gc_constraint():
     assert failures
 
 
+def test_get_d4d_field_constraint_matches_key():
+    assert ev.check_get_d4d_constraints(
+        {"orgId": "B2AI_ORG:116", "field": "human_subject_research"},
+        {"orgId": "B2AI_ORG:116", "field": "human_subject_research"},
+    ) == []
+
+
+def test_get_d4d_field_constraint_matches_label_case_and_spacing_insensitively():
+    """The Lambda's own field resolver treats a field's key and its label as
+    interchangeable, case/space/underscore-insensitively -- the grading
+    constraint must do the same, so an agent call using the label
+    ("Human Subject Research") isn't wrongly flagged against a constraint
+    written with the key ("human_subject_research"), or vice versa."""
+    assert ev.check_get_d4d_constraints(
+        {"orgId": "B2AI_ORG:116", "field": "Human Subject Research"},
+        {"orgId": "B2AI_ORG:116", "field": "human_subject_research"},
+    ) == []
+    assert ev.check_get_d4d_constraints(
+        {"orgId": "B2AI_ORG:116", "field": "human subject research"},
+        {"orgId": "B2AI_ORG:116", "field": "Human_Subject_Research"},
+    ) == []
+
+
+def test_get_d4d_field_constraint_mismatch_fails():
+    failures = ev.check_get_d4d_constraints(
+        {"orgId": "B2AI_ORG:116", "field": "informed_consent"},
+        {"orgId": "B2AI_ORG:116", "field": "human_subject_research"},
+    )
+    assert failures
+
+
+def test_get_d4d_field_constraint_requires_no_field_when_none_expected():
+    """A constraint that omits `field` is indifferent to it (existing
+    behavior), but one that explicitly says the outline/section call was
+    expected (no field param) must flag a call that supplied one."""
+    assert ev.check_get_d4d_constraints({"orgId": "B2AI_ORG:114", "section": "motivation"}, {"orgId": "B2AI_ORG:114"}) == []
+
+
+def test_get_d4d_section_and_field_are_independent_constraints():
+    """section and field are mutually exclusive on the real call, but the
+    constraint checker grades each key independently -- a constraint that
+    only specifies field should not fail a call just because it also (or
+    instead) carries a section, and vice versa."""
+    assert ev.check_get_d4d_constraints({"orgId": "B2AI_ORG:114", "section": "motivation"}, {"field": None}) == []
+    failures = ev.check_get_d4d_constraints({"orgId": "B2AI_ORG:114", "section": "motivation"}, {"field": "human_subject_research"})
+    assert failures
+
+
+def test_compare_d4d_field_constraint():
+    assert ev.check_compare_d4d_constraints({"field": "human_subject_research"}, {"field": "human_subject_research"}) == []
+    assert ev.check_compare_d4d_constraints({"field": "Human Subject Research"}, {"field": "human_subject_research"}) == []
+    failures = ev.check_compare_d4d_constraints({"field": "informed_consent"}, {"field": "human_subject_research"})
+    assert failures
+
+
+def test_identity_matches_getD4D_field_case_insensitive():
+    """_identity_matches must use the same normalized field comparison as
+    check_get_d4d_constraints, so tie-breaking among several getD4D calls in
+    one turn isn't fooled by a label/key case or spacing difference."""
+    assert ev._identity_matches(
+        "getD4D", {"orgId": "B2AI_ORG:116", "field": "Human Subject Research"}, {"field": "human_subject_research"}
+    )
+    assert not ev._identity_matches(
+        "getD4D", {"orgId": "B2AI_ORG:116", "field": "informed_consent"}, {"field": "human_subject_research"}
+    )
+    assert not ev._identity_matches(
+        "getD4D", {"orgId": "B2AI_ORG:116", "section": "motivation"}, {"field": "human_subject_research"}
+    )
+
+
+def test_identity_matches_compareD4D_field():
+    assert ev._identity_matches("compareD4D", {"field": "human_subject_research"}, {"field": "human_subject_research"})
+    assert not ev._identity_matches("compareD4D", {"field": "informed_consent"}, {"field": "human_subject_research"})
+
+
 # ---------------------------------------------------------------------------
 # grade_tool_calls (end to end against the synthetic trace)
 # ---------------------------------------------------------------------------
@@ -585,6 +660,41 @@ def test_grade_tool_calls_missing_required_call():
     result = ev.grade_tool_calls(item, [])
     assert result["score"] == 0.0
     assert result["any_required_missing"]
+
+
+def test_grade_tool_calls_compare_d4d_field_shape():
+    calls = [{"function": "compareD4D", "params": {"field": "human_subject_research"}, "output": {"field": "human_subject_research"}}]
+    item = {
+        "expected_tool_calls": [
+            {"function": "compareD4D", "constraints": {"field": "human_subject_research"}},
+        ]
+    }
+    result = ev.grade_tool_calls(item, calls)
+    assert result["score"] == 1.0
+    assert not result["any_required_missing"]
+
+
+def test_grade_tool_calls_compare_d4d_wrong_field_fails():
+    calls = [{"function": "compareD4D", "params": {"field": "informed_consent"}, "output": {}}]
+    item = {
+        "expected_tool_calls": [
+            {"function": "compareD4D", "constraints": {"field": "human_subject_research"}},
+        ]
+    }
+    result = ev.grade_tool_calls(item, calls)
+    assert result["score"] == 0.0
+
+
+def test_grade_tool_calls_get_d4d_field_shape():
+    calls = [{"function": "getD4D", "params": {"orgId": "B2AI_ORG:116", "field": "human_subject_research"}, "output": {}}]
+    item = {
+        "expected_tool_calls": [
+            {"function": "getD4D", "constraints": {"orgId": "B2AI_ORG:116", "field": "human_subject_research"}},
+        ]
+    }
+    result = ev.grade_tool_calls(item, calls)
+    assert result["score"] == 1.0
+    assert not result["any_required_missing"]
 
 
 def test_grade_tool_calls_optional_call_not_penalized(synthetic_trace_events):

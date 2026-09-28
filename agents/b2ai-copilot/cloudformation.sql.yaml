@@ -316,22 +316,22 @@ Resources:
 
         ## D4D Exploration
 
-        The 4 Bridge2AI Grand Challenges each have a **D4D** (Datasheet for Dataset) — a structured questionnaire describing their dataset's Motivation, Composition, Collection Process, Uses, Distribution, Maintenance, and Human Subjects considerations. **Triggers**: a user asks about a Grand Challenge's dataset, datasheet, D4D, composition, collection process, intended uses, distribution, maintenance, or human-subjects/consent details.
+        The 4 Bridge2AI Grand Challenges each have a **D4D** (Datasheet for Dataset) — a structured questionnaire covering things like why the dataset was created, what it contains, how it was collected, intended uses, distribution terms, maintenance, and ethics/human-subjects considerations, organized into sections defined by the pinned D4D schema (call `getD4D(orgId)` for the actual list — it can vary slightly by Grand Challenge). **Triggers**: a user asks about a Grand Challenge's dataset, datasheet, D4D, composition, collection process, intended uses, distribution, maintenance, or human-subjects/consent details.
 
         Flow:
         1. **Resolve the GC.** Call `listD4Ds()` (or use `sqlQuery` on `organizations`) to confirm the org and its exact name — never guess a Grand Challenge name.
-        2. **Overview.** Call `getD4D(orgId)` with no `section` for the outline (title + each section's heading/description/size) and summarize it briefly.
-        3. **Offer sections.** Present the outline's sections as `<guideprompt>` choices so the user can pick one.
-        4. **Answer from the section only.** Call `getD4D(orgId, section)` and answer strictly from the returned `text`, naming the section (e.g. "Per the Collection Process section..."). Never paraphrase beyond what's retrieved, and say plainly when a D4D doesn't cover something the user asked about. If `nextOffset` is present and the user wants more of that section, call again with that `offset`.
+        2. **Overview.** Call `getD4D(orgId)` with no `section`/`field` for the outline (title + each section's heading/description/size, plus its fields' id/label/size/portalSection) and summarize it briefly.
+        3. **Offer sections or fields.** Present the outline's sections (or, once you know what the user's after, specific fields) as `<guideprompt>` choices.
+        4. **Answer from the retrieved text only.** For a specific question about one thing (e.g. "what license does it use?"), call `getD4D(orgId, field)`; to browse a whole group of related fields, call `getD4D(orgId, section)`. Answer strictly from the returned `text`, naming the section/field (e.g. "Per the Distribution section..."). Never paraphrase beyond what's retrieved, and say plainly when a D4D doesn't cover something the user asked about. If `nextOffset` is present and the user wants more, call again with that `offset`. Section names follow the D4D schema, not the portal page's own grouping — if a user names a portal page section that doesn't match, use the field's `portalSection` to find it instead.
         5. **Link back.** Include the org's Detail Page link (`orgLink`, prefixed with the portal origin) so the user can read the full page.
 
-        For a **cross-GC comparison** ("which challenges collected consent information?"), call `searchD4D(query)` first (optionally scoped with `orgId`) and summarize the matching snippets by org and section before drilling into any one D4D with `getD4D`.
+        For a **cross-GC comparison of the same field** ("which challenges collected consent information?", "how does the license differ across challenges?"): if the field is already known, call `compareD4D(field)` directly and summarize the per-org `text`/`present`. If it isn't known yet, call `searchD4D(query)` first (optionally scoped with `orgId`) to find the right field/section, then `compareD4D` or `getD4D(orgId, field)`.
 
         ## Source Selection
 
         - **Docs KB**: process/policy/how-to questions (registry contribution, governance, licensing) and data-model questions (what a category/field means, controlled vocabulary, how standards/topics/substrates relate) — bridge2ai.github.io/b2ai-standards-registry and bridge2ai.github.io/standards-schemas. Cite the source URL.
         - **Table KB** (SQL action group): counts, listings, filtering, retrieval of specific standards/datasets/organizations/topics/substrates/manifest entries.
-        - **D4D ops**: any Grand Challenge datasheet question (see D4D Exploration above) — use `listD4Ds`/`getD4D`/`searchD4D`, not raw `sqlQuery` against the `d4d` table.
+        - **D4D ops**: any Grand Challenge datasheet question (see D4D Exploration above) — use `listD4Ds`/`getD4D`/`compareD4D`/`searchD4D`, not raw `sqlQuery` against the `d4d` table.
         - **Both**: compound questions needing live data plus procedural/data-model context.
         - Default to the docs KB when ambiguous (cheaper).
 
@@ -342,8 +342,9 @@ Resources:
         - `countByType()` — row counts across all 7 tables.
         - `buildPortalUrl(resourceType, id?, searchTerm?, facets?)` — the only way to build a redirect/link target. `resourceType` is `standards`/`organizations`/`topics` (with `id`) or `search` (with optional `searchTerm` and/or `facets`, standards only); it validates `id` against the expected prefix for that resource type and rejects an unknown facet `columnName` or an empty/malformed `values` list, returning an error rather than a dead link. **Its `url` must be copied verbatim into `<target>` or a markdown link — never retype, shorten, or reconstruct any part of it from memory.**
         - `listD4Ds()` — the Grand Challenge orgs with a D4D: `orgId`, `name`, `title`, `link`.
-        - `getD4D(orgId, section?, offset?)` — without `section`, an outline (title + each section's `id`/`heading`/`description`/`size`); with `section`, that section's `text` (paged via `offset`/`nextOffset` when large).
-        - `searchD4D(query, orgId?)` — case-insensitive snippet search across one or all D4Ds; each hit names its `orgId`/`section`/`heading`.
+        - `getD4D(orgId, section?, field?, offset?)` — without `section`/`field`, an outline (title + each section's `id`/`heading`/`description`/`size` and its fields' `id`/`label`/`size`/`portalSection`); with `section`, that section's fields as `text` (paged via `offset`/`nextOffset` when large); with `field`, just that one field's `text` plus its `label`/`description`/`schemaSection`/`portalSection`/`inSchema`. Never both `section` and `field`.
+        - `compareD4D(field)` — one field's `text` from each of the 4 Grand Challenges in one call (`present: false` when a GC has no value for it) — use for a cross-GC question about a field you already know.
+        - `searchD4D(query, orgId?)` — case-insensitive search across one or all D4Ds' field text and labels; each hit names its `orgId`/`section`/`heading`/`field`/`label` — use when the field isn't known in advance.
 
         ## Worked example
 
@@ -377,16 +378,18 @@ Resources:
                   Bridge2AI Standards Explorer's curated Synapse denormalized tables
                   directly via SQL (standards, datasets, organizations, topics,
                   substrates, manifest, d4d), plus a D4D (Datasheets for Datasets)
-                  exploration sub-routine over the d4d table's HTML content. A Lambda
-                  adapter maps these operations to Bedrock action-group style function
-                  calls via apiPath or function name.
+                  exploration sub-routine backed by a pinned rendering of the D4D source
+                  YAML (not the d4d table's raw HTML). A Lambda adapter maps these
+                  operations to Bedrock action-group style function calls via apiPath or
+                  function name.
               tags:
                 - name: sql
                   description: SQL query, introspection, and portal URL operations over the B2AI tables
                 - name: d4d
                   description: >
                     D4D (Datasheets for Datasets) exploration for the 4 Bridge2AI Grand
-                    Challenge organizations
+                    Challenge organizations, backed by a pinned rendering of the D4D
+                    source YAML
               paths:
                 /sql-query:
                   post:
@@ -535,7 +538,9 @@ Resources:
                     description: >
                       Returns the 4 Bridge2AI Grand Challenge organizations that have a
                       D4D (Datasheet for Dataset): orgId, display name, the D4D document's
-                      own title, and a link to the org's Detail Page.
+                      own title, and a link to the org's Detail Page. Also returns
+                      `source`, identifying the pinned D4D source YAML this data was
+                      rendered from.
                     responses:
                       "200":
                         description: The D4D-bearing Grand Challenge orgs, or an application-level error
@@ -548,12 +553,21 @@ Resources:
                     tags:
                       - d4d
                     operationId: getD4D
-                    summary: Get a Grand Challenge's D4D outline, or one section's text
+                    summary: Get a Grand Challenge's D4D outline, one section's text, or one field's text
                     description: >
-                      Without `section`: returns an outline of the D4D (title plus each
-                      section's id, heading, description, and size in characters). With
-                      `section`: returns that section's readable text, paged under a
-                      ~15,000-character budget via `offset`/`nextOffset`.
+                      Without `section`/`field`: returns an outline of the D4D (title,
+                      `source`, and each section's id/heading/description/size plus its
+                      fields' id/label/size/portalSection -- a section is a group of
+                      fields per the pinned D4D source schema, not the portal page's own
+                      grouping; see `portalSection` when a user refers to a portal page
+                      section by name). With `section`: returns that section's fields
+                      rendered as text, paged under a ~15,000-character budget via
+                      `offset`/`nextOffset`. With `field`: returns that one field's text
+                      (also paged) plus its metadata (label, description, schemaSection,
+                      portalSection, inSchema). `section` and `field` may not both be
+                      given -- use `field` for a specific question about one thing, `section`
+                      to browse a whole group, and `compareD4D` (not this) for the same
+                      field across all 4 Grand Challenges.
                     requestBody:
                       required: true
                       content:
@@ -568,13 +582,49 @@ Resources:
                               value:
                                 orgId: "B2AI_ORG:114"
                                 section: motivation
+                            field:
+                              value:
+                                orgId: "B2AI_ORG:114"
+                                field: distribution_formats
                     responses:
                       "200":
-                        description: The D4D outline or section text, or an application-level error payload
+                        description: The D4D outline, section text, or field text, or an application-level error payload
                         content:
                           application/json:
                             schema:
                               $ref: "#/components/schemas/GetD4DResponse"
+                /d4d-compare:
+                  post:
+                    tags:
+                      - d4d
+                    operationId: compareD4D
+                    summary: Compare one D4D field across all 4 Grand Challenges
+                    description: >
+                      For a cross-GC question about the same field ("how do the challenges'
+                      datasets differ in X?"), returns that one field's text from each of
+                      the 4 Grand Challenges (with `present: false` for a GC that has no
+                      value for it), plus the field's shared label/description/
+                      schemaSection/portalSection. Each org's text is capped so the whole
+                      response stays under the same ~15,000-character budget as `getD4D`
+                      (`truncated` marks a capped org). Use `searchD4D` instead when the
+                      field isn't known in advance.
+                    requestBody:
+                      required: true
+                      content:
+                        application/json:
+                          schema:
+                            $ref: "#/components/schemas/CompareD4DRequest"
+                          examples:
+                            compare:
+                              value:
+                                field: distribution_formats
+                    responses:
+                      "200":
+                        description: The per-org comparison, or an application-level error payload
+                        content:
+                          application/json:
+                            schema:
+                              $ref: "#/components/schemas/CompareD4DResponse"
                 /d4d-search:
                   post:
                     tags:
@@ -582,10 +632,12 @@ Resources:
                     operationId: searchD4D
                     summary: Keyword search across one or all D4Ds
                     description: >
-                      Case-insensitive keyword search across one Grand Challenge's D4D (if
-                      `orgId` is given) or all of them, returning at most ~20
-                      section-labelled snippets. Useful for cross-GC questions like "which
-                      challenges collected consent information?".
+                      Case-insensitive keyword search (against each field's rendered text
+                      and its label) across one Grand Challenge's D4D (if `orgId` is
+                      given) or all of them, returning at most ~20 hits, each naming its
+                      field and section. Useful when the field isn't known in advance, or
+                      for cross-GC questions like "which challenges collected consent
+                      information?" -- use `compareD4D` instead when the field IS known.
                     requestBody:
                       required: true
                       content:
@@ -620,8 +672,10 @@ Resources:
                         description: >
                           Table alias (standards, datasets, organizations, topics,
                           substrates, manifest, d4d), or the synId of one of those tables (always resolved to its pinned version). For d4d,
-                          prefer the listD4Ds/getD4D/searchD4D operations over raw SQL --
-                          content_text is large HTML best explored through those.
+                          prefer the listD4Ds/getD4D/compareD4D/searchD4D operations, which
+                          read a pre-rendered, pinned D4D source file, over raw SQL here --
+                          content_text is the same information as raw HTML, far less
+                          convenient to work with.
                       sql:
                         type: string
                         description: >
@@ -710,8 +764,10 @@ Resources:
                         description: >
                           Table alias (standards, datasets, organizations, topics,
                           substrates, manifest, d4d), or the synId of one of those tables (always resolved to its pinned version). For d4d,
-                          prefer the listD4Ds/getD4D/searchD4D operations over raw SQL --
-                          content_text is large HTML best explored through those.
+                          prefer the listD4Ds/getD4D/compareD4D/searchD4D operations, which
+                          read a pre-rendered, pinned D4D source file, over raw SQL here --
+                          content_text is the same information as raw HTML, far less
+                          convenient to work with.
                     additionalProperties: false
                   QueryResultResponse:
                     type: object
@@ -753,6 +809,16 @@ Resources:
                         type: object
                         description: Map of table alias to error text, present only on partial failure.
                     additionalProperties: false
+                  D4DSourceInfo:
+                    type: object
+                    description: Identifies the pinned D4D source YAML this data was rendered from.
+                    properties:
+                      repo:
+                        type: string
+                      commit:
+                        type: string
+                      synapseTable:
+                        type: string
                   ListD4DsResponse:
                     type: object
                     properties:
@@ -769,10 +835,12 @@ Resources:
                               description: The Grand Challenge org's display name from the organizations table.
                             title:
                               type: string
-                              description: The D4D document's own <h1> title.
+                              description: The D4D document's own title.
                             link:
                               type: string
                               description: Relative Organization Detail Page path.
+                      source:
+                        $ref: "#/components/schemas/D4DSourceInfo"
                       error:
                         type: string
                     additionalProperties: false
@@ -789,13 +857,20 @@ Resources:
                       section:
                         type: string
                         description: >
-                          A section id from a prior outline call (omit to get the
-                          outline instead of section text).
+                          A section id from a prior outline call (omit, along with `field`,
+                          to get the outline instead). Not used together with `field`.
+                      field:
+                        type: string
+                        description: >
+                          A field id or label from a prior outline call, e.g.
+                          "distribution_formats" or "Distribution Formats" (matching is
+                          case- and spacing-insensitive). Returns just that one field's
+                          text plus its metadata. Not used together with `section`.
                       offset:
                         type: integer
                         description: >
                           Character offset to resume from, from a prior response's
-                          `nextOffset`. Only used with `section`.
+                          `nextOffset`. Only used with `section` or `field`.
                     additionalProperties: false
                   GetD4DResponse:
                     type: object
@@ -804,14 +879,18 @@ Resources:
                         type: string
                       orgName:
                         type: string
+                        description: Present in the outline and section responses (absent from a field response).
                       orgLink:
                         type: string
+                        description: Present in the outline and section responses (absent from a field response).
                       title:
                         type: string
-                        description: Present in the outline response (no `section` given).
+                        description: Present in the outline response (neither `section` nor `field` given).
+                      source:
+                        $ref: "#/components/schemas/D4DSourceInfo"
                       sections:
                         type: array
-                        description: Present in the outline response (no `section` given).
+                        description: Present in the outline response (neither `section` nor `field` given).
                         items:
                           type: object
                           properties:
@@ -823,26 +902,119 @@ Resources:
                               type: string
                             size:
                               type: integer
-                              description: Length in characters of that section's full text.
+                              description: Length in characters of that section's full rendered text.
+                            fieldsTruncated:
+                              type: boolean
+                              description: >
+                                True if this section's `fields` list below was cut short to
+                                keep the whole outline under Bedrock's response budget
+                                (rare -- only for a doc with an unusually large number of
+                                fields). The section's own text (via a `section` call) is
+                                never truncated by this.
+                            fields:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                                  label:
+                                    type: string
+                                  size:
+                                    type: integer
+                                    description: Length in characters of this field's full rendered text.
+                                  portalSection:
+                                    type: string
+                                    description: >
+                                      The heading this field is grouped under on the portal's
+                                      own D4D page, when that differs from this schema
+                                      section's grouping.
                       section:
                         type: string
                         description: Present in a section response (echoes the requested section id).
                       heading:
                         type: string
                         description: Present in a section response.
+                      field:
+                        type: string
+                        description: Present in a field response (echoes the resolved field id).
+                      label:
+                        type: string
+                        description: Present in a field response.
+                      schemaSection:
+                        type: string
+                        description: Present in a field response -- the field's D4D schema section id.
+                      portalSection:
+                        type: string
+                        description: Present in a field response, when known -- see `sections[].fields[].portalSection` above.
+                      inSchema:
+                        type: boolean
+                        description: >
+                          Present in a field response -- whether this field is a modeled
+                          slot in the pinned D4D schema, as opposed to extra data the
+                          source YAML carries outside it.
                       text:
                         type: string
                         description: >
-                          Present in a section response. The section's readable text for
-                          this page, up to ~15,000 characters.
+                          Present in a section or field response. Readable text for this
+                          page, up to ~15,000 characters.
                       totalLength:
                         type: integer
                         description: Present in a section response. The section's full length in characters.
                       nextOffset:
                         type: integer
                         description: >
-                          Present in a section response only when the text was truncated;
-                          pass back as `offset` to get the next page.
+                          Present in a section or field response only when the text was
+                          truncated; pass back as `offset` to get the next page.
+                      error:
+                        type: string
+                    additionalProperties: false
+                  CompareD4DRequest:
+                    type: object
+                    required:
+                      - field
+                    properties:
+                      field:
+                        type: string
+                        description: >
+                          A field id or label, e.g. "distribution_formats" or
+                          "Distribution Formats" (matching is case- and
+                          spacing-insensitive).
+                    additionalProperties: false
+                  CompareD4DResponse:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                      label:
+                        type: string
+                      description:
+                        type: string
+                      schemaSection:
+                        type: string
+                      portalSection:
+                        type: string
+                      orgs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            orgId:
+                              type: string
+                            name:
+                              type: string
+                              description: The Grand Challenge org's display name from the organizations table.
+                            present:
+                              type: boolean
+                              description: Whether this org's D4D has a value for the field.
+                            text:
+                              type: string
+                              description: This org's rendered text for the field (empty when `present` is false).
+                            truncated:
+                              type: boolean
+                              description: >
+                                True if `text` was capped to keep the whole response under
+                                the shared per-response character budget.
                       error:
                         type: string
                     additionalProperties: false
@@ -872,13 +1044,18 @@ Resources:
                           properties:
                             orgId:
                               type: string
-                            orgName:
-                              type: string
                             section:
                               type: string
-                              description: The section id the snippet was found in.
+                              description: The section id the matching field belongs to.
                             heading:
                               type: string
+                              description: That section's heading.
+                            field:
+                              type: string
+                              description: The matching field's id.
+                            label:
+                              type: string
+                              description: The matching field's label.
                             snippet:
                               type: string
                               description: Up to ~300 characters of context around the match.

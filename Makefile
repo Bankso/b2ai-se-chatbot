@@ -88,7 +88,7 @@ deploy-sql-dev: deploy-sql-dev-upload deploy-sql-dev-stack deploy-sql-dev-code
 deploy-sql-dev-lambda: deploy-sql-dev-upload deploy-sql-dev-code
 
 deploy-sql-dev-upload:
-	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/b2aiSqlRag.zip lambda_function.py
+	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/b2aiSqlRag.zip lambda_function.py d4d_data.json
 	$(AWS) s3 cp /tmp/b2aiSqlRag.zip "s3://$(S3_BUCKET)/lambda/b2aiSqlRag-dev.zip"
 
 deploy-sql-dev-code:
@@ -123,7 +123,7 @@ deploy-sql-prod-stack:
 	$(MAKE) --no-print-directory deploy-sql-prod-stack-unconfirmed
 
 deploy-sql-prod-upload:
-	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/b2aiSqlRag.zip lambda_function.py
+	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/b2aiSqlRag.zip lambda_function.py d4d_data.json
 	$(AWS) s3 cp /tmp/b2aiSqlRag.zip "s3://$(S3_BUCKET)/lambda/b2aiSqlRag.zip"
 
 deploy-sql-prod-code:

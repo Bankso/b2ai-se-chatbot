@@ -1128,7 +1128,7 @@
       "category": "d4d",
       "question": "Does the CM4AI Grand Challenge's dataset involve human subjects?",
       "persona": "PATIENT",
-      "notes": "Single-GC D4D section fact. Confirmed live: getD4D(B2AI_ORG:116, section='human-subjects') text includes 'Involves Human Subjects: False' (non-clinical cell-line data).",
+      "notes": "Single-GC D4D field fact. Confirmed live: getD4D(B2AI_ORG:116, field='human_subject_research') text includes 'Involves Human Subjects: False' (non-clinical cell-line data). This field's schemaSection is 'other' -- there is no dedicated 'human subjects' section in the D4D schema.",
       "expected_tool_calls": [
         {
           "function": "listD4Ds",
@@ -1145,13 +1145,13 @@
           "function": "getD4D",
           "constraints": {
             "orgId": "B2AI_ORG:116",
-            "section": "human-subjects"
+            "field": "human_subject_research"
           }
         }
       ],
       "expected_answer": {
         "org_id": "B2AI_ORG:116",
-        "section": "human-subjects",
+        "field": "human_subject_research",
         "involves_human_subjects": false,
         "text_contains": "Involves Human Subjects: False"
       },
@@ -1163,7 +1163,7 @@
       "category": "d4d",
       "question": "Which Bridge2AI Grand Challenges' datasheets discuss participant consent?",
       "persona": "PATIENT",
-      "notes": "Cross-GC comparison -- must use searchD4D, not getD4D on one org. Confirmed live: 'consent' hits AI-READI (114), CM4AI (116), and Voice (117), but NOT CHoRUS (115), which discusses IRB/ethics oversight without the literal word 'consent'. A correct answer names exactly these 3 GCs, not all 4.",
+      "notes": "Cross-GC comparison -- must use searchD4D, not getD4D on one org. Confirmed live: 'consent' hits AI-READI (114) and Voice (117), but NOT CHoRUS (115) or CM4AI (116), whose rendered D4D field text doesn't contain the literal word 'consent'. A correct answer names exactly these 2 GCs, not all 4.",
       "expected_tool_calls": [
         {
           "function": "searchD4D",
@@ -1176,11 +1176,11 @@
       "expected_answer": {
         "matching_org_ids": [
           "B2AI_ORG:114",
-          "B2AI_ORG:116",
           "B2AI_ORG:117"
         ],
         "non_matching_org_ids": [
-          "B2AI_ORG:115"
+          "B2AI_ORG:115",
+          "B2AI_ORG:116"
         ]
       },
       "ground_truth_query": null,
@@ -1191,7 +1191,7 @@
       "category": "d4d",
       "question": "Give me an overview of the AI-READI Grand Challenge's dataset datasheet (D4D).",
       "persona": "RESEARCHER",
-      "notes": "Outline request -- getD4D with no `section` returns the outline (7 flat sections: motivation, composition, collection-process, uses, distribution, maintenance, human-subjects -- confirmed live, no 'Preprocessing' section exists here).",
+      "notes": "Outline request -- getD4D with no `section`/`field` returns the outline. Section ids are D4D-schema section slugs (a subset of motivation/composition/collection/preprocessing-cleaning-labeling/uses/distribution/maintenance/ethics/datagovernance/other, only the ones with >=1 present field) -- derived live below rather than hardcoded, since which sections are non-empty varies by org.",
       "expected_tool_calls": [
         {
           "function": "listD4Ds",
@@ -1208,15 +1208,18 @@
       ],
       "expected_answer": {
         "org_id": "B2AI_ORG:114",
-        "title": "AI READI Dataset Documentation",
+        "title": "Flagship Dataset of Type 2 Diabetes from the AI-READI Project",
         "section_ids": [
           "motivation",
           "composition",
-          "collection-process",
+          "collection",
+          "preprocessing-cleaning-labeling",
           "uses",
           "distribution",
           "maintenance",
-          "human-subjects"
+          "ethics",
+          "datagovernance",
+          "other"
         ]
       },
       "ground_truth_query": null,
