@@ -19,6 +19,8 @@ No stack has been deployed yet, so there are no real Agent IDs to record here �
 
 | Agent | Registration | Registered by | Notes |
 |---|---|---|---|
+|1DKMRGU8YQ|355|Orion Banks|Development stack|
+|SPK51S50V1|356|Orion Banks|Production stack|
 
 The portal currently ships a *different*, pre-existing agent registration — **236, "Bridge2AI Standards Portal Assistant"** — wired into the live frontend's `synapseChatConfig.ts`. Per the retarget plan, the new prod agent built from this repo will **replace** that registration once deployed, but that cutover is an **open item** for the user to perform after deployment (see below) — it has not happened yet, and this table does not represent it as done.
 
