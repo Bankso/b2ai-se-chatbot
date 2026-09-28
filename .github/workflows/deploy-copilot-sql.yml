@@ -47,6 +47,14 @@ jobs:
             exit 1
           fi
 
+      - name: Guard prod branch
+        if: inputs.environment == 'prod' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Refusing to deploy environment=prod from ${{ github.ref }}." \
+               "Prod deploys are only allowed from the main branch -- merge first," \
+               "then re-run this workflow (with environment=prod) from main."
+          exit 1
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}

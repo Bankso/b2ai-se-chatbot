@@ -130,7 +130,7 @@ python3 evaluate_resource_search.py --agent-id ABC123 --item rs-keyword-fhir
 python3 evaluate_resource_search.py --agent-id ABC123 --no-judge      # disable the LLM-judge fallback
 ```
 
-`--agent-id` is **required, with no default** — no B2AI agent has been deployed yet. `PROD_AGENT_ID` in `evaluate_resource_search.py` is a placeholder (`REPLACE_ME_B2AI_PROD_AGENT_ID`) until a real prod agent exists; once it does, fill it in and the script will refuse to run against it without `--allow-prod`, the same guard `evaluate_redteam.py` uses.
+`--agent-id` is **required, with no default** — see `agents/README.md` for the dev/prod agent ids (dev `1DKMRGU8YQ` / registration 355, prod `SPK51S50V1` / registration 356). `PROD_AGENT_ID` in `evaluate_resource_search.py` is set to the real prod agent id, and the script will refuse to run against it without `--allow-prod`, the same guard `evaluate_redteam.py` uses.
 
 | Flag | Default | Description |
 |---|---|---|

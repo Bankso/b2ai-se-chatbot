@@ -95,6 +95,204 @@
       "schemaSection": "other",
       "portalSection": null,
       "inSchema": true
+    },
+    "extra_field_01": {
+      "label": "Extra Field 01",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_02": {
+      "label": "Extra Field 02",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_03": {
+      "label": "Extra Field 03",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_04": {
+      "label": "Extra Field 04",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_05": {
+      "label": "Extra Field 05",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_06": {
+      "label": "Extra Field 06",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_07": {
+      "label": "Extra Field 07",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_08": {
+      "label": "Extra Field 08",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_09": {
+      "label": "Extra Field 09",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_10": {
+      "label": "Extra Field 10",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_11": {
+      "label": "Extra Field 11",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_12": {
+      "label": "Extra Field 12",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_13": {
+      "label": "Extra Field 13",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_14": {
+      "label": "Extra Field 14",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_15": {
+      "label": "Extra Field 15",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_16": {
+      "label": "Extra Field 16",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_17": {
+      "label": "Extra Field 17",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_18": {
+      "label": "Extra Field 18",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_19": {
+      "label": "Extra Field 19",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_20": {
+      "label": "Extra Field 20",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_21": {
+      "label": "Extra Field 21",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
+    },
+    "extra_field_22": {
+      "label": "Extra Field 22",
+      "description": null,
+      "descriptionSource": null,
+      "extraSource": null,
+      "schemaSection": "other",
+      "portalSection": null,
+      "inSchema": true
     }
   },
   "docs": {
@@ -538,7 +736,29 @@
           "Note item 399: filler context padding text for pagination.",
           "Note item 400: filler context padding text for pagination."
         ],
-        "org_a_only_note": "Only present for org A."
+        "org_a_only_note": "Only present for org A.",
+        "extra_field_01": "Widget note 01 for fair-allocation search testing.",
+        "extra_field_02": "Widget note 02 for fair-allocation search testing.",
+        "extra_field_03": "Widget note 03 for fair-allocation search testing.",
+        "extra_field_04": "Widget note 04 for fair-allocation search testing.",
+        "extra_field_05": "Widget note 05 for fair-allocation search testing.",
+        "extra_field_06": "Widget note 06 for fair-allocation search testing.",
+        "extra_field_07": "Widget note 07 for fair-allocation search testing.",
+        "extra_field_08": "Widget note 08 for fair-allocation search testing.",
+        "extra_field_09": "Widget note 09 for fair-allocation search testing.",
+        "extra_field_10": "Widget note 10 for fair-allocation search testing.",
+        "extra_field_11": "Widget note 11 for fair-allocation search testing.",
+        "extra_field_12": "Widget note 12 for fair-allocation search testing.",
+        "extra_field_13": "Widget note 13 for fair-allocation search testing.",
+        "extra_field_14": "Widget note 14 for fair-allocation search testing.",
+        "extra_field_15": "Widget note 15 for fair-allocation search testing.",
+        "extra_field_16": "Widget note 16 for fair-allocation search testing.",
+        "extra_field_17": "Widget note 17 for fair-allocation search testing.",
+        "extra_field_18": "Widget note 18 for fair-allocation search testing.",
+        "extra_field_19": "Widget note 19 for fair-allocation search testing.",
+        "extra_field_20": "Widget note 20 for fair-allocation search testing.",
+        "extra_field_21": "Widget note 21 for fair-allocation search testing.",
+        "extra_field_22": "Widget note 22 for fair-allocation search testing."
       }
     },
     "B2AI_ORG:115": {
@@ -566,7 +786,10 @@
           "Short note 1.",
           "Short note 2.",
           "Short note 3."
-        ]
+        ],
+        "extra_field_01": "Widget note 01 for the other sample org.",
+        "extra_field_02": "Widget note 02 for the other sample org.",
+        "extra_field_03": "Widget note 03 for the other sample org."
       }
     }
   }

@@ -325,7 +325,7 @@ Resources:
         4. **Answer from the retrieved text only.** For a specific question about one thing (e.g. "what license does it use?"), call `getD4D(orgId, field)`; to browse a whole group of related fields, call `getD4D(orgId, section)`. Answer strictly from the returned `text`, naming the section/field (e.g. "Per the Distribution section..."). Never paraphrase beyond what's retrieved, and say plainly when a D4D doesn't cover something the user asked about. If `nextOffset` is present and the user wants more, call again with that `offset`. Section names follow the D4D schema, not the portal page's own grouping — if a user names a portal page section that doesn't match, use the field's `portalSection` to find it instead.
         5. **Link back.** Include the org's Detail Page link (`orgLink`, prefixed with the portal origin) so the user can read the full page.
 
-        For a **cross-GC comparison of the same field** ("which challenges collected consent information?", "how does the license differ across challenges?"): if the field is already known, call `compareD4D(field)` directly and summarize the per-org `text`/`present`. If it isn't known yet, call `searchD4D(query)` first (optionally scoped with `orgId`) to find the right field/section, then `compareD4D` or `getD4D(orgId, field)`.
+        For a **cross-GC comparison of the same field** ("which challenges collected consent information?", "how does the license differ across challenges?"): if the field is already known, call `compareD4D(field)` directly and summarize the per-org `text`/`present`. If it isn't known yet, call `searchD4D(query)` first (optionally scoped with `orgId`) to find the right field/section, then `compareD4D` or `getD4D(orgId, field)`. Before saying a GC doesn't cover something based on a cross-GC `searchD4D`, check `orgHits`/`truncated` and rerun scoped with that GC's `orgId` if its matches were capped.
 
         ## Source Selection
 
@@ -344,7 +344,7 @@ Resources:
         - `listD4Ds()` — the Grand Challenge orgs with a D4D: `orgId`, `name`, `title`, `link`.
         - `getD4D(orgId, section?, field?, offset?)` — without `section`/`field`, an outline (title + each section's `id`/`heading`/`description`/`size` and its fields' `id`/`label`/`size`/`portalSection`); with `section`, that section's fields as `text` (paged via `offset`/`nextOffset` when large); with `field`, just that one field's `text` plus its `label`/`description`/`schemaSection`/`portalSection`/`inSchema`. Never both `section` and `field`.
         - `compareD4D(field)` — one field's `text` from each of the 4 Grand Challenges in one call (`present: false` when a GC has no value for it) — use for a cross-GC question about a field you already know.
-        - `searchD4D(query, orgId?)` — case-insensitive search across one or all D4Ds' field text and labels; each hit names its `orgId`/`section`/`heading`/`field`/`label` — use when the field isn't known in advance.
+        - `searchD4D(query, orgId?)` — case-insensitive search across one or all D4Ds' field text and labels; each hit names its `orgId`/`section`/`heading`/`field`/`label` — use when the field isn't known in advance. Without `orgId`, check `orgHits`/`truncated` before concluding a GC has no matches, since the shared cap can leave some of a GC's real matches unreturned.
 
         ## Worked example
 
@@ -564,7 +564,9 @@ Resources:
                       rendered as text, paged under a ~15,000-character budget via
                       `offset`/`nextOffset`. With `field`: returns that one field's text
                       (also paged) plus its metadata (label, description, schemaSection,
-                      portalSection, inSchema). `section` and `field` may not both be
+                      portalSection, inSchema). Every form also returns `orgName`/`orgLink`
+                      (best-effort -- see `orgName` below) so a response can always link
+                      back to the org's Detail Page. `section` and `field` may not both be
                       given -- use `field` for a specific question about one thing, `section`
                       to browse a whole group, and `compareD4D` (not this) for the same
                       field across all 4 Grand Challenges.
@@ -638,6 +640,10 @@ Resources:
                       field and section. Useful when the field isn't known in advance, or
                       for cross-GC questions like "which challenges collected consent
                       information?" -- use `compareD4D` instead when the field IS known.
+                      Across all GCs, the ~20-hit cap is allocated fairly across them
+                      (not first-come-first-served); check `orgHits`/`truncated` before
+                      concluding a GC has no coverage, and rerun scoped with `orgId` to see
+                      a capped GC's remaining matches.
                     requestBody:
                       required: true
                       content:
@@ -832,7 +838,10 @@ Resources:
                               description: e.g. "B2AI_ORG:114".
                             name:
                               type: string
-                              description: The Grand Challenge org's display name from the organizations table.
+                              description: >
+                                The Grand Challenge org's display name. Best-effort: the live
+                                organizations-table name, falling back to a bundled label
+                                if that lookup fails -- never fails the call.
                             title:
                               type: string
                               description: The D4D document's own title.
@@ -857,8 +866,11 @@ Resources:
                       section:
                         type: string
                         description: >
-                          A section id from a prior outline call (omit, along with `field`,
-                          to get the outline instead). Not used together with `field`.
+                          A section id or heading from a prior outline call, e.g.
+                          "collection-process" or "Collection Process" (matching is case-
+                          and spacing-insensitive, with spaces/hyphens/underscores treated
+                          as equivalent -- same as `field`). Omit, along with `field`, to
+                          get the outline instead. Not used together with `field`.
                       field:
                         type: string
                         description: >
@@ -879,10 +891,13 @@ Resources:
                         type: string
                       orgName:
                         type: string
-                        description: Present in the outline and section responses (absent from a field response).
+                        description: >
+                          Present in the outline, section, and field responses. Best-effort:
+                          the live organizations-table name, falling back to a bundled
+                          label if that lookup fails -- never fails the call.
                       orgLink:
                         type: string
-                        description: Present in the outline and section responses (absent from a field response).
+                        description: Present in the outline, section, and field responses.
                       title:
                         type: string
                         description: Present in the outline response (neither `section` nor `field` given).
@@ -1003,7 +1018,10 @@ Resources:
                               type: string
                             name:
                               type: string
-                              description: The Grand Challenge org's display name from the organizations table.
+                              description: >
+                                The Grand Challenge org's display name. Best-effort: the live
+                                organizations-table name, falling back to a bundled label
+                                if that lookup fails -- never fails the call.
                             present:
                               type: boolean
                               description: Whether this org's D4D has a value for the field.
@@ -1059,6 +1077,34 @@ Resources:
                             snippet:
                               type: string
                               description: Up to ~300 characters of context around the match.
+                      orgHits:
+                        type: array
+                        description: >
+                          Present only when `orgId` was omitted (searching all 4 GCs).
+                          One entry per Grand Challenge, including ones with no matches at
+                          all, so a caller can tell "this GC has none" apart from "this GC
+                          had matches that got capped" -- check this (and `truncated`)
+                          before concluding a GC doesn't cover something, and rerun with
+                          `orgId` to see the rest of a capped GC's matches. The cap is
+                          allocated round-robin by rank across GCs (one hit from each GC
+                          with one at that rank, in turn), not first-come-first-served, so
+                          a GC with many matches can no longer starve the ones after it.
+                        items:
+                          type: object
+                          properties:
+                            orgId:
+                              type: string
+                            matches:
+                              type: integer
+                              description: Total fields matching the query for this GC, before capping.
+                            returned:
+                              type: integer
+                              description: How many of this GC's matches made it into `results`.
+                      truncated:
+                        type: boolean
+                        description: >
+                          True if any match (in any GC searched) didn't make it into
+                          `results` because of the D4D_MAX_SNIPPETS cap.
                       error:
                         type: string
                     additionalProperties: false

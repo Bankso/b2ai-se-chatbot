@@ -1209,6 +1209,14 @@ class TestD4DOps(_SampleD4DDataMixin):
         assert "B2AI_ORG:116" not in [d["orgId"] for d in result["d4ds"]]
         assert "B2AI_ORG:117" not in [d["orgId"] for d in result["d4ds"]]
 
+    @patch("lambda_function._run_query", side_effect=Exception("synapse down"))
+    def test_list_d4ds_falls_back_when_org_names_query_fails(self, _mock):
+        result = list_d4ds({})
+        assert "error" not in result
+        by_org = {d["orgId"]: d for d in result["d4ds"]}
+        assert by_org["B2AI_ORG:114"]["name"] == "SAMPLE-A"
+        assert by_org["B2AI_ORG:115"]["name"] == "SAMPLE-B"
+
     @patch("lambda_function._run_query")
     def test_get_d4d_outline(self, mock_run_query):
         self._patch_org_names(mock_run_query)
@@ -1247,6 +1255,24 @@ class TestD4DOps(_SampleD4DDataMixin):
         assert "### License" in result["text"]
         assert "CC BY-NC 4.0" in result["text"]
         assert "nextOffset" not in result
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_section_matches_heading_case_and_spacing_insensitively(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        by_id = get_d4d({"orgId": "B2AI_ORG:114", "section": "distribution"})
+        by_heading = get_d4d({"orgId": "B2AI_ORG:114", "section": "DISTRIBUTION"})
+        assert by_id["section"] == by_heading["section"] == "distribution"
+        assert by_id["text"] == by_heading["text"]
+
+    @patch("lambda_function._run_query")
+    def test_get_d4d_section_matches_id_with_separators_normalized(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
+        # "collection-process" is the section id; hyphens, underscores, and
+        # no separator at all should all resolve to it, case-insensitively.
+        for variant in ("Collection Process", "collection_process", "COLLECTIONPROCESS"):
+            result = get_d4d({"orgId": "B2AI_ORG:114", "section": variant})
+            assert result["section"] == "collection-process", variant
+            assert result["heading"] == "Collection Process"
 
     @patch("lambda_function._run_query")
     def test_get_d4d_section_renders_nested_values(self, mock_run_query):
@@ -1315,6 +1341,8 @@ class TestD4DOps(_SampleD4DDataMixin):
         result = get_d4d({"orgId": "B2AI_ORG:114", "field": "license"})
         assert result == {
             "orgId": "B2AI_ORG:114",
+            "orgName": "Sample Grand Challenge",
+            "orgLink": "/Explore/Organization/OrganizationDetailsPage?id=B2AI_ORG:114",
             "field": "license",
             "label": "License",
             "description": "The dataset's license.",
@@ -1323,15 +1351,13 @@ class TestD4DOps(_SampleD4DDataMixin):
             "inSchema": False,
             "text": "CC BY-NC 4.0",
         }
-        # Field responses don't need the org-name lookup at all.
-        mock_run_query.assert_not_called()
 
     @patch("lambda_function._run_query")
     def test_get_d4d_field_matches_label_case_and_spacing_insensitively(self, mock_run_query):
+        self._patch_org_names(mock_run_query)
         by_label = get_d4d({"orgId": "B2AI_ORG:114", "field": "DISTRIBUTION info"})
         by_key = get_d4d({"orgId": "B2AI_ORG:114", "field": "distribution_info"})
         assert by_label["field"] == by_key["field"] == "distribution_info"
-        mock_run_query.assert_not_called()
 
     @patch("lambda_function._run_query")
     def test_get_d4d_field_pagination(self, mock_run_query):
@@ -1367,10 +1393,33 @@ class TestD4DOps(_SampleD4DDataMixin):
         assert "error" in result
 
     @patch("lambda_function._run_query", side_effect=Exception("synapse down"))
-    def test_get_d4d_org_names_failure_returns_error(self, _mock):
+    def test_get_d4d_outline_falls_back_when_org_names_query_fails(self, _mock, capsys):
+        # A Synapse hiccup fetching org display names must not fail the
+        # whole call -- D4D content is fully bundled, so this falls back to
+        # the bundled `docs[org]["gc"]` label instead of erroring out.
         result = get_d4d({"orgId": "B2AI_ORG:114"})
-        assert "error" in result
-        assert "synapse down" in result["error"]
+        assert "error" not in result
+        assert result["orgName"] == "SAMPLE-A"
+        assert result["orgLink"] == "/Explore/Organization/OrganizationDetailsPage?id=B2AI_ORG:114"
+        assert "synapse down" in capsys.readouterr().out
+
+    @patch("lambda_function._run_query", side_effect=Exception("synapse down"))
+    def test_get_d4d_field_falls_back_when_org_names_query_fails(self, _mock):
+        result = get_d4d({"orgId": "B2AI_ORG:114", "field": "license"})
+        assert "error" not in result
+        assert result["orgName"] == "SAMPLE-A"
+        assert result["orgLink"] == "/Explore/Organization/OrganizationDetailsPage?id=B2AI_ORG:114"
+
+    @patch("lambda_function._run_query", side_effect=Exception("synapse down"))
+    def test_get_d4d_org_names_failure_retries_on_next_call(self, mock_run_query):
+        # The failure isn't cached: a later call whose org-names query
+        # succeeds picks up the live name instead of being stuck with the
+        # bundled fallback forever.
+        get_d4d({"orgId": "B2AI_ORG:114"})
+        assert lambda_function._D4D_ORG_NAMES == {}
+        mock_run_query.side_effect = _d4d_org_names_side_effect(self.ORG_NAMES)
+        result = get_d4d({"orgId": "B2AI_ORG:114"})
+        assert result["orgName"] == "Sample Grand Challenge"
 
     def test_get_d4d_data_load_failure_returns_error(self, monkeypatch, tmp_path):
         monkeypatch.setattr(lambda_function, "_D4D_DATA_PATH", str(tmp_path / "nope.json"))
@@ -1399,6 +1448,17 @@ class TestCompareD4D(_SampleD4DDataMixin):
         assert by_org["B2AI_ORG:115"]["present"] is False
         assert by_org["B2AI_ORG:115"]["text"] == ""
         assert by_org["B2AI_ORG:116"]["present"] is False
+
+    @patch("lambda_function._run_query", side_effect=Exception("synapse down"))
+    def test_compare_falls_back_when_org_names_query_fails(self, _mock):
+        result = compare_d4d({"field": "license"})
+        assert "error" not in result
+        by_org = {o["orgId"]: o for o in result["orgs"]}
+        assert by_org["B2AI_ORG:114"]["name"] == "SAMPLE-A"
+        assert by_org["B2AI_ORG:115"]["name"] == "SAMPLE-B"
+        # No bundled GC has orgId 116/117 in the sample fixture -- falls
+        # back all the way to the raw orgId.
+        assert by_org["B2AI_ORG:116"]["name"] == "B2AI_ORG:116"
 
     @patch("lambda_function._run_query")
     def test_compare_matches_by_label(self, mock_run_query):
@@ -1456,10 +1516,23 @@ class TestSearchD4D(_SampleD4DDataMixin):
         result = search_d4d({"query": "consent", "orgId": "B2AI_ORG:114"})
         assert result["results"]
         assert all(r["orgId"] == "B2AI_ORG:114" for r in result["results"])
+        assert result["truncated"] is False
+        assert "orgHits" not in result
+
+    def test_search_scoped_to_one_org_reports_truncated(self):
+        with patch("lambda_function.D4D_MAX_SNIPPETS", 5):
+            result = search_d4d({"query": "widget", "orgId": "B2AI_ORG:114"})
+        assert len(result["results"]) == 5
+        assert result["truncated"] is True
+        assert "orgHits" not in result
 
     def test_search_no_hits(self):
         result = search_d4d({"query": "blockchain"})
-        assert result == {"query": "blockchain", "results": []}
+        assert result["results"] == []
+        assert result["truncated"] is False
+        assert result["orgHits"] == [
+            {"orgId": oid, "matches": 0, "returned": 0} for oid in GC_ORG_IDS
+        ]
 
     @patch("lambda_function._run_query")
     def test_search_missing_query(self, mock_run_query):
@@ -1469,6 +1542,35 @@ class TestSearchD4D(_SampleD4DDataMixin):
     def test_search_unknown_org_id(self):
         result = search_d4d({"query": "consent", "orgId": "B2AI_ORG:999"})
         assert "error" in result
+
+    def test_search_allocates_cap_fairly_across_orgs(self):
+        # Fixture: B2AI_ORG:114 has 22 fields matching "widget",
+        # B2AI_ORG:115 has 3, and B2AI_ORG:116/117 have none (and no D4D
+        # content at all in this fixture) -- 25 total matches against a cap
+        # of 20. Round-robin by rank fully includes the smaller org (115)
+        # before the larger one (114) exhausts the shared cap, unlike the
+        # old fill-in-GC_ORG_IDS-order behavior, which would have returned
+        # only org 114's hits.
+        result = search_d4d({"query": "widget"})
+        assert len(result["results"]) == lambda_function.D4D_MAX_SNIPPETS
+        assert result["truncated"] is True
+
+        by_org = {h["orgId"]: h for h in result["orgHits"]}
+        assert by_org["B2AI_ORG:114"] == {"orgId": "B2AI_ORG:114", "matches": 22, "returned": 17}
+        assert by_org["B2AI_ORG:115"] == {"orgId": "B2AI_ORG:115", "matches": 3, "returned": 3}
+        assert by_org["B2AI_ORG:116"] == {"orgId": "B2AI_ORG:116", "matches": 0, "returned": 0}
+        assert by_org["B2AI_ORG:117"] == {"orgId": "B2AI_ORG:117", "matches": 0, "returned": 0}
+
+        returned_org_ids = [r["orgId"] for r in result["results"]]
+        assert returned_org_ids.count("B2AI_ORG:114") == 17
+        assert returned_org_ids.count("B2AI_ORG:115") == 3
+
+    def test_search_preserves_each_orgs_own_hit_order(self):
+        result = search_d4d({"query": "widget"})
+        org114_fields = [
+            r["field"] for r in result["results"] if r["orgId"] == "B2AI_ORG:114"
+        ]
+        assert org114_fields == sorted(org114_fields, key=lambda f: int(f.rsplit("_", 1)[-1]))
 
 
 # ---------------------------------------------------------------------------

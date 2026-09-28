@@ -30,7 +30,7 @@
 AWS_REGION ?= us-east-1
 FOUNDATION_MODEL_ID ?= anthropic.claude-sonnet-4-6
 S3_BUCKET ?= b2ai-se-copilot
-AWS_PROFILE ?= llmadmin
+AWS_PROFILE ?=
 
 AWS := aws --region $(AWS_REGION) $(if $(AWS_PROFILE),--profile $(AWS_PROFILE),)
 

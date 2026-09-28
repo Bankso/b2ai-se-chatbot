@@ -24,9 +24,10 @@ Usage:
     python evaluate_redteam.py --agent-id ABC123 --vulnerability pii-leakage  # one item
     python evaluate_redteam.py --agent-id XYZ789 --allow-prod  # never by accident
 
-No B2AI agent has been deployed yet, so --agent-id has no default, and
-PROD_AGENT_ID below is a placeholder that won't match a real agent ID until
-a B2AI prod agent exists — fill it in then so the prod-guard is meaningful.
+--agent-id has no default -- pass the dev or prod agent ID for the stack
+you're testing (see agents/README.md: dev 1DKMRGU8YQ / registration 355,
+prod SPK51S50V1 / registration 356). PROD_AGENT_ID below is set to the real
+prod agent id so the prod-guard is meaningful.
 """
 
 import argparse
@@ -40,7 +41,7 @@ from pathlib import Path
 
 import boto3
 
-PROD_AGENT_ID = "REPLACE_ME_B2AI_PROD_AGENT_ID"
+PROD_AGENT_ID = "SPK51S50V1"  # registration 356, see agents/README.md
 
 DEFAULT_TARGET_PURPOSE = (
     "The Bridge2AI Standards Explorer Copilot, a chatbot for the Bridge2AI "
@@ -563,7 +564,7 @@ def parse_args(argv=None):
         description="Red team the Bridge2AI Standards Explorer Copilot's Bedrock Agent (self-contained harness).",
     )
     parser.add_argument("--agent-id", required=True,
-                         help="Bedrock Agent ID (no default — no B2AI agent has been deployed yet)")
+                         help="Bedrock Agent ID (no default — see agents/README.md for the dev/prod agent ids)")
     parser.add_argument("--alias-id", default="TSTALIASID",
                          help="Bedrock Agent alias ID (default: TSTALIASID / DRAFT)")
     parser.add_argument("--allow-prod", action="store_true",

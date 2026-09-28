@@ -979,7 +979,8 @@ _D4D_SOURCE: Dict[str, Any] = {}  # the data file's top-level "source" object
 _D4D_FIELDS: Dict[str, Any] = {}  # top-level YAML key -> field metadata (global, not per-org)
 _D4D_FIELD_INDEX: Dict[str, str] = {}  # normalized key-or-label -> canonical field key
 _D4D_DOCS: Dict[str, Dict[str, Any]] = {}  # orgId -> {"title", "fields": {...}, "sections": [...]}
-_D4D_ORG_NAMES: Dict[str, str] = {}  # orgId -> org name
+_D4D_ORG_NAMES: Dict[str, str] = {}  # orgId -> org name (live Synapse lookup)
+_D4D_GC_LABELS: Dict[str, str] = {}  # orgId -> bundled docs[org]["gc"] label (best-effort fallback)
 _D4D_LOADED = False
 
 _D4D_KEY_LABEL_OVERRIDES = {"id": "ID", "url": "URL", "doi": "DOI"}
@@ -1100,6 +1101,34 @@ def _d4d_section_key(value: Optional[str]) -> str:
     return re.sub(r"[^a-z0-9]+", "-", str(value or "other").lower()).strip("-") or "other"
 
 
+def _d4d_normalize_section_query(name: str) -> str:
+    """Case/separator-insensitive normal form for matching a caller-supplied
+    `getD4D(section=...)` value against a doc's sections: lowercase with
+    every space, "-", and "_" removed entirely, so "Data Governance",
+    "data-governance", "data_governance", and "DataGovernance" all normalize
+    to the same "datagovernance" key. Distinct from `_d4d_section_key`
+    (used at load time to file a field under its `schemaSection` slug),
+    which only normalizes separator *style* to a canonical "-", not
+    separator *presence* -- that's enough there since `schemaSection`
+    values already come from the data file, but a human-typed section name
+    can omit a separator entirely (as in "DataGovernance" above)."""
+    return re.sub(r"[\s_-]+", "", str(name).strip().lower())
+
+
+def _d4d_resolve_section(doc: Dict[str, Any], section_name: str) -> Optional[Dict[str, Any]]:
+    """Resolve a caller-supplied section id or heading -- any case, with
+    spaces/hyphens/underscores treated as equivalent (see
+    `_d4d_normalize_section_query`) -- to that section's rendered dict for
+    `doc`, or None if unknown for this doc."""
+    target = _d4d_normalize_section_query(section_name)
+    for section in doc["sections"]:
+        if target == _d4d_normalize_section_query(section["id"]):
+            return section
+        if target == _d4d_normalize_section_query(section["heading"]):
+            return section
+    return None
+
+
 def _ensure_d4d_loaded() -> None:
     """Load `d4d_data.json` once per warm Lambda container, pre-rendering
     every doc's fields (`_d4d_render_value`) and grouping them into their
@@ -1141,6 +1170,7 @@ def _ensure_d4d_loaded() -> None:
         fields_meta[key] = dict(meta, schemaSection=section_key)
 
     rendered_docs: Dict[str, Dict[str, Any]] = {}
+    gc_labels: Dict[str, str] = {}
     for org_id, doc in docs.items():
         doc_data = doc.get("data") or {}
         fields: Dict[str, Dict[str, Any]] = {}
@@ -1151,6 +1181,7 @@ def _ensure_d4d_loaded() -> None:
             if not text:
                 continue
             fields[key] = dict(meta, text=text)
+        gc_labels[org_id] = doc.get("gc") or org_id
 
         sections = []
         for sec in sections_meta:
@@ -1185,6 +1216,8 @@ def _ensure_d4d_loaded() -> None:
         _D4D_FIELDS.update(fields_meta)
         _D4D_FIELD_INDEX.clear()
         _D4D_FIELD_INDEX.update(_build_d4d_field_index(fields_meta))
+        _D4D_GC_LABELS.clear()
+        _D4D_GC_LABELS.update({oid: gc_labels[oid] for oid in rendered_docs})
         _D4D_LOADED = True
 
 
@@ -1211,6 +1244,34 @@ def _ensure_d4d_org_names_loaded() -> None:
             _D4D_ORG_NAMES[org_id] = row.get("name") or org_id
 
 
+def _d4d_org_name(org_id: str) -> str:
+    """Best-effort display name for `org_id`: the live Synapse
+    organizations-table name when it's been loaded, else the bundled D4D
+    doc's own `gc` label, else the raw orgId. Used together with
+    `_try_load_d4d_org_names`, which attempts the live lookup but never
+    raises -- see its docstring for why."""
+    return _D4D_ORG_NAMES.get(org_id) or _D4D_GC_LABELS.get(org_id, org_id)
+
+
+def _try_load_d4d_org_names() -> None:
+    """Best-effort refresh of `_D4D_ORG_NAMES` via `_ensure_d4d_org_names_loaded`.
+
+    D4D content is fully bundled in `d4d_data.json`; the org display name is
+    the only thing a D4D op needs from Synapse, so a failure here (the
+    organizations table being briefly unreachable, say) must not fail the
+    whole op the way it used to -- it's logged and swallowed, and callers
+    fall back to `_d4d_org_name`'s bundled `gc` label instead. Nothing here
+    caches the failure: `_ensure_d4d_org_names_loaded` only ever populates
+    `_D4D_ORG_NAMES` on a successful, non-empty bundle, so a later
+    invocation retries the live lookup rather than being stuck with the
+    fallback label forever.
+    """
+    try:
+        _ensure_d4d_org_names_loaded()
+    except Exception as e:
+        print(f"D4D org-name lookup failed, falling back to bundled labels: {e}")
+
+
 def _d4d_org_link(org_id: str) -> str:
     return f"/Explore/Organization/OrganizationDetailsPage?id={org_id}"
 
@@ -1224,12 +1285,14 @@ def _d4d_clamp_offset(offset: Any) -> int:
 
 def list_d4ds(params: Dict[str, Any]) -> Dict[str, Any]:
     """The Grand Challenge orgs that have a D4D: id, name, detail-page link,
-    plus the pinned D4D source (`source`)."""
+    plus the pinned D4D source (`source`). `name` is a best-effort Synapse
+    lookup (see `_try_load_d4d_org_names`) -- only a failure to load the
+    bundled data file itself fails this call."""
     try:
         _ensure_d4d_loaded()
-        _ensure_d4d_org_names_loaded()
     except Exception as e:
         return {"error": f"Failed to load D4D data: {e}"}
+    _try_load_d4d_org_names()
 
     items = []
     for org_id in GC_ORG_IDS:
@@ -1238,7 +1301,7 @@ def list_d4ds(params: Dict[str, Any]) -> Dict[str, Any]:
             continue
         items.append({
             "orgId": org_id,
-            "name": _D4D_ORG_NAMES.get(org_id, org_id),
+            "name": _d4d_org_name(org_id),
             "title": doc.get("title", ""),
             "link": _d4d_org_link(org_id),
         })
@@ -1304,7 +1367,7 @@ def _get_d4d_outline(org_id: str, org_name: str, org_link: str, doc: Dict[str, A
 def _get_d4d_section(
     org_id: str, org_name: str, org_link: str, doc: Dict[str, Any], section_id: str, offset: Any
 ) -> Dict[str, Any]:
-    section = next((s for s in doc["sections"] if s["id"] == section_id), None)
+    section = _d4d_resolve_section(doc, section_id)
     if section is None:
         valid = ", ".join(s["id"] for s in doc["sections"])
         return {"error": f"Unknown section {section_id!r} for {org_id}. Valid sections: {valid}."}
@@ -1316,7 +1379,7 @@ def _get_d4d_section(
         "orgId": org_id,
         "orgName": org_name,
         "orgLink": org_link,
-        "section": section_id,
+        "section": section["id"],
         "heading": section["heading"],
         "text": chunk,
         "totalLength": len(text),
@@ -1334,11 +1397,18 @@ def _get_d4d_field(org_id: str, doc: Dict[str, Any], field_name: str, offset: An
         valid = ", ".join(sorted(doc["fields"]))
         return {"error": f"Unknown field {field_name!r} for {org_id}. Valid fields: {valid}."}
 
+    # Best-effort org name/link, same as the outline and section responses --
+    # step 5 of the agent Instruction's D4D flow always links back via
+    # `orgLink`, so a field response needs it too.
+    _try_load_d4d_org_names()
+
     offset = _d4d_clamp_offset(offset)
     text = field["text"]
     chunk = text[offset:offset + D4D_SECTION_BUDGET]
     result = {
         "orgId": org_id,
+        "orgName": _d4d_org_name(org_id),
+        "orgLink": _d4d_org_link(org_id),
         "field": field_key,
         "label": field["label"],
         "description": field.get("description"),
@@ -1358,7 +1428,10 @@ def get_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
     section's id/heading/description/size plus its fields' id/label/size/
     portalSection). With `section`: that section's fields rendered as text,
     paged under D4D_SECTION_BUDGET. With `field`: that one field's text
-    (also paged). `section` and `field` may not both be given."""
+    (also paged). `section` and `field` may not both be given. Every branch
+    includes a best-effort `orgName`/`orgLink` (see `_try_load_d4d_org_names`)
+    -- only a failure to load the bundled `d4d_data.json` itself returns an
+    error."""
     org_id = params.get("orgId")
     if not org_id:
         return {"error": "orgId is required"}
@@ -1388,11 +1461,8 @@ def get_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
     if field_name:
         return _get_d4d_field(org_id, doc, field_name, params.get("offset"))
 
-    try:
-        _ensure_d4d_org_names_loaded()
-    except Exception as e:
-        return {"error": f"Failed to load D4D data: {e}"}
-    org_name = _D4D_ORG_NAMES.get(org_id, org_id)
+    _try_load_d4d_org_names()
+    org_name = _d4d_org_name(org_id)
     org_link = _d4d_org_link(org_id)
 
     if not section_id:
@@ -1411,9 +1481,9 @@ def compare_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         _ensure_d4d_loaded()
-        _ensure_d4d_org_names_loaded()
     except Exception as e:
         return {"error": f"Failed to load D4D data: {e}"}
+    _try_load_d4d_org_names()
 
     field_key = _d4d_resolve_field(field_name)
     if field_key is None:
@@ -1430,7 +1500,7 @@ def compare_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
         if field is None:
             orgs.append({
                 "orgId": org_id,
-                "name": _D4D_ORG_NAMES.get(org_id, org_id),
+                "name": _d4d_org_name(org_id),
                 "present": False,
                 "text": "",
                 "truncated": False,
@@ -1439,7 +1509,7 @@ def compare_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
         text = field["text"]
         orgs.append({
             "orgId": org_id,
-            "name": _D4D_ORG_NAMES.get(org_id, org_id),
+            "name": _d4d_org_name(org_id),
             "present": True,
             "text": text[:per_org_budget],
             "truncated": len(text) > per_org_budget,
@@ -1455,11 +1525,68 @@ def compare_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _d4d_field_match_index(field: Dict[str, Any], needle: str) -> Optional[int]:
+    """Index within `field["text"]` where `needle` was found, or 0 if only
+    the field's label matched (no in-text location to point the snippet at),
+    or None if neither the label nor the text matched."""
+    if needle in field["label"].lower():
+        return 0
+    idx = field["text"].lower().find(needle)
+    return idx if idx != -1 else None
+
+
+def _d4d_search_org_hits(org_id: str, doc: Dict[str, Any], needle: str) -> List[Dict[str, Any]]:
+    """Every field of `doc` (in section/field order) whose label or text
+    matches `needle`, as a full hit dict -- uncapped. `search_d4d` applies
+    the D4D_MAX_SNIPPETS cap itself, fairly across orgs when searching all of
+    them (see its round-robin allocation), so this must return every match,
+    not just the first D4D_MAX_SNIPPETS."""
+    hits = []
+    for section in doc["sections"]:
+        for key in section["fieldKeys"]:
+            field = doc["fields"][key]
+            idx = _d4d_field_match_index(field, needle)
+            if idx is None:
+                continue
+            text = field["text"]
+            snippet_start = max(0, idx - 80)
+            snippet_end = min(len(text), idx + len(needle) + 220)
+            snippet = text[snippet_start:snippet_end].strip()[:D4D_SNIPPET_CHARS]
+            hits.append({
+                "orgId": org_id,
+                "section": section["id"],
+                "heading": section["heading"],
+                "field": key,
+                "label": field["label"],
+                "snippet": snippet,
+            })
+    return hits
+
+
 def search_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
     """Case-insensitive keyword search (against rendered field text and
     labels) across one or all D4Ds, returning at most D4D_MAX_SNIPPETS
     hits -- at most one per field, so a field matched only in its label
-    still surfaces (with a snippet from the start of its text)."""
+    still surfaces (with a snippet from the start of its text).
+
+    Scoped to one `orgId`: hits are capped in section/field order, same as
+    before this fix, plus `truncated` (True if that org had more matches
+    than fit under the cap).
+
+    Across all GCs (no `orgId`): filling the shared cap in GC_ORG_IDS order
+    let one early, hit-heavy org exhaust the whole cap and starve every GC
+    after it (confirmed live: a "license"/"participant" search returned hits
+    for org 114 only, though 115/116/117 all had real matches). Instead,
+    every org's *full*, uncapped match list is computed first, then the cap
+    is allocated round-robin by rank within each org's own hit order (one
+    hit from each org that still has one at that rank, in GC_ORG_IDS order,
+    then rank+1, ...) -- so every org with a match gets at least one
+    whenever the cap allows, and a large org's excess is what gets dropped,
+    not a later org's entire result. `orgHits` reports, for every GC
+    (including zero-match ones), its total match count and how many made
+    the cut, so a caller can tell a true zero-coverage GC from one that was
+    merely capped and rerun scoped with `orgId` if it needs the rest.
+    """
     query = params.get("query")
     if not query or not isinstance(query, str):
         return {"error": "query is required"}
@@ -1477,42 +1604,55 @@ def search_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
                 f"{', '.join(GC_ORG_IDS)}."
             )
         }
-    target_orgs = [org_id] if org_id else GC_ORG_IDS
 
     needle = query.lower()
-    hits = []
-    for oid in target_orgs:
-        doc = _D4D_DOCS.get(oid)
-        if not doc:
-            continue
-        for section in doc["sections"]:
-            if len(hits) >= D4D_MAX_SNIPPETS:
-                break
-            for key in section["fieldKeys"]:
-                if len(hits) >= D4D_MAX_SNIPPETS:
-                    break
-                field = doc["fields"][key]
-                text = field["text"]
-                label = field["label"]
-                lower_text = text.lower()
-                if needle in label.lower():
-                    idx = 0
-                else:
-                    idx = lower_text.find(needle)
-                    if idx == -1:
-                        continue
-                snippet_start = max(0, idx - 80)
-                snippet_end = min(len(text), idx + len(needle) + 220)
-                snippet = text[snippet_start:snippet_end].strip()[:D4D_SNIPPET_CHARS]
-                hits.append({
-                    "orgId": oid,
-                    "section": section["id"],
-                    "heading": section["heading"],
-                    "field": key,
-                    "label": label,
-                    "snippet": snippet,
-                })
-        if len(hits) >= D4D_MAX_SNIPPETS:
-            break
 
-    return {"query": query, "results": hits}
+    if org_id:
+        doc = _D4D_DOCS.get(org_id)
+        all_hits = _d4d_search_org_hits(org_id, doc, needle) if doc else []
+        results = all_hits[:D4D_MAX_SNIPPETS]
+        return {
+            "query": query,
+            "results": results,
+            "truncated": len(all_hits) > len(results),
+        }
+
+    # No orgId: gather every org's full, uncapped match list up front so the
+    # cap can be allocated fairly instead of first-come-first-served.
+    per_org_hits = {
+        oid: _d4d_search_org_hits(oid, _D4D_DOCS[oid], needle)
+        for oid in GC_ORG_IDS
+        if oid in _D4D_DOCS
+    }
+
+    results: List[Dict[str, Any]] = []
+    ordered_hit_lists = [per_org_hits.get(oid, []) for oid in GC_ORG_IDS]
+    rank = 0
+    while len(results) < D4D_MAX_SNIPPETS and any(rank < len(hits) for hits in ordered_hit_lists):
+        for hits in ordered_hit_lists:
+            if rank < len(hits):
+                results.append(hits[rank])
+                if len(results) >= D4D_MAX_SNIPPETS:
+                    break
+        rank += 1
+
+    returned_counts: Dict[str, int] = {}
+    for hit in results:
+        returned_counts[hit["orgId"]] = returned_counts.get(hit["orgId"], 0) + 1
+
+    total_matches = sum(len(hits) for hits in per_org_hits.values())
+    org_hits = [
+        {
+            "orgId": oid,
+            "matches": len(per_org_hits.get(oid, [])),
+            "returned": returned_counts.get(oid, 0),
+        }
+        for oid in GC_ORG_IDS
+    ]
+
+    return {
+        "query": query,
+        "results": results,
+        "orgHits": org_hits,
+        "truncated": total_matches > len(results),
+    }

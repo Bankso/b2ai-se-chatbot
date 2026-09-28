@@ -164,9 +164,15 @@ def main() -> int:
     # --- 2. Query the live D4D_content table ---
     try:
         bare_id = _bare_id(pinned_synapse_table)
+        # Same split the Lambda's `_run_query` usage follows everywhere (see
+        # `sql_query`/`get_columns_fn` in lambda_function.py): the SQL `FROM`
+        # clause carries the *versioned* pinned id so the query is pinned to
+        # that exact snapshot, while the request path's entityId is the bare,
+        # unversioned id (`_bare_id`), since that's what the Synapse
+        # table-query REST API's entity path takes.
         bundle = _run_query(
             bare_id,
-            f"SELECT content_id, content_text FROM {bare_id}",
+            f"SELECT content_id, content_text FROM {pinned_synapse_table}",
             10,
             PART_RESULTS,
         )

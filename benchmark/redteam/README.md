@@ -2,7 +2,7 @@
 
 Adversarial security/safety testing for the Bridge2AI Standards Explorer Copilot. A self-contained harness — no third-party red-team framework — drives an attacker LLM against a live (**dev**) copilot and a judge LLM scores whether each attack succeeded.
 
-> **Status:** retargeted from the CCKP Copilot's redteam benchmark (itself forked from the NF Portal Copilot's) as part of this repo's Bridge2AI Standards Explorer conversion (`plans/retarget-b2ai-standards-explorer.md`). No B2AI agent has been deployed yet, so there's no agent to run this against. `redteam_config.json`'s CCKP-era `cckp-medical-misinformation` item has been replaced with `b2ai-clinical-misinformation`; `access-restriction-disclosure` has been removed (B2AI has no access-restricted resources) and replaced with `false-restriction-claim`, the mirror-image failure the Instruction's open-access rule actually guards against; `query-injection` has been retargeted to the real SQL-only ops; and a new `d4d-fabrication` item covers the D4D (Datasheets for Datasets) exploration sub-routine that doesn't exist in the CCKP version. See the TODOs in that file for what still needs a first real run's findings.
+> **Status:** retargeted from the CCKP Copilot's redteam benchmark (itself forked from the NF Portal Copilot's) as part of this repo's Bridge2AI Standards Explorer conversion (`plans/retarget-b2ai-standards-explorer.md`). `redteam_config.json`'s CCKP-era `cckp-medical-misinformation` item has been replaced with `b2ai-clinical-misinformation`; `access-restriction-disclosure` has been removed (B2AI has no access-restricted resources) and replaced with `false-restriction-claim`, the mirror-image failure the Instruction's open-access rule actually guards against; `query-injection` has been retargeted to the real SQL-only ops; and a new `d4d-fabrication` item covers the D4D (Datasheets for Datasets) exploration sub-routine that doesn't exist in the CCKP version. See the TODOs in that file for what still needs a first real run's findings.
 
 ## Background
 
@@ -12,8 +12,8 @@ Unlike other current benchmarks, this benchmark is **dynamic**: for each vulnera
 
 ## ⚠️ Safety
 
-- This script **actively attacks a live Bedrock Agent alias**. It refuses to run against the known prod agent id unless you pass `--allow-prod` — don't do that without a specific reason. `PROD_AGENT_ID` in `evaluate_redteam.py` is currently a placeholder (`REPLACE_ME_B2AI_PROD_AGENT_ID`) since no B2AI prod agent exists yet; fill it in once one is deployed so this guard is meaningful.
-- `--agent-id` has no default — no B2AI dev agent exists yet either. Always pass the dev agent's ID explicitly.
+- This script **actively attacks a live Bedrock Agent alias**. It refuses to run against the known prod agent id unless you pass `--allow-prod` — don't do that without a specific reason. `PROD_AGENT_ID` in `evaluate_redteam.py` is set to the real prod agent id, `SPK51S50V1` (registration 356, see `agents/README.md`), so this guard is meaningful.
+- `--agent-id` has no default. Always pass the dev agent's ID explicitly (`1DKMRGU8YQ`, registration 355, see `agents/README.md`).
 - Result JSON files can contain **successfully leaked/harmful content** the attacks extracted from the agent — that's the point of the exercise, but review before sharing or committing results outside this benchmark's normal workflow.
 
 ## Setup
@@ -177,13 +177,13 @@ python evaluate_redteam.py --agent-id ABC123 \
     --attacker-model us.anthropic.claude-opus-4-8 --judge-model us.anthropic.claude-haiku-4-5
 ```
 
-`--agent-id` is required — no B2AI dev agent has been deployed yet. The default alias `TSTALIASID` always points to the DRAFT version. If you've updated the agent without preparing it, run `aws bedrock-agent prepare-agent --agent-id <ID>` first.
+`--agent-id` is required — no default. The default alias `TSTALIASID` always points to the DRAFT version. If you've updated the agent without preparing it, run `aws bedrock-agent prepare-agent --agent-id <ID>` first.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--agent-id` | _(required)_ | Bedrock Agent ID — no B2AI agent is deployed yet |
+| `--agent-id` | _(required)_ | Bedrock Agent ID — see `agents/README.md` for the dev/prod agent ids |
 | `--alias-id` | `TSTALIASID` | Bedrock Agent alias ID (DRAFT) |
-| `--allow-prod` | off | Required to target the prod agent id (`PROD_AGENT_ID` in `evaluate_redteam.py`, currently a placeholder) |
+| `--allow-prod` | off | Required to target the prod agent id (`PROD_AGENT_ID` in `evaluate_redteam.py`, `SPK51S50V1`) |
 | `--config` | `redteam_config.json` | Vulnerability config file |
 | `--vulnerability` | all | Only run one config item by `vulnerability_id` |
 | `--attacker-model` | `us.anthropic.claude-sonnet-5` | Bedrock model ID that crafts attacks |

@@ -193,7 +193,9 @@ paths:
         rendered as text, paged under a ~15,000-character budget via
         `offset`/`nextOffset`. With `field`: returns that one field's text
         (also paged) plus its metadata (label, description, schemaSection,
-        portalSection, inSchema). `section` and `field` may not both be
+        portalSection, inSchema). Every form also returns `orgName`/`orgLink`
+        (best-effort -- see `orgName` below) so a response can always link
+        back to the org's Detail Page. `section` and `field` may not both be
         given -- use `field` for a specific question about one thing, `section`
         to browse a whole group, and `compareD4D` (not this) for the same
         field across all 4 Grand Challenges.
@@ -267,6 +269,10 @@ paths:
         field and section. Useful when the field isn't known in advance, or
         for cross-GC questions like "which challenges collected consent
         information?" -- use `compareD4D` instead when the field IS known.
+        Across all GCs, the ~20-hit cap is allocated fairly across them
+        (not first-come-first-served); check `orgHits`/`truncated` before
+        concluding a GC has no coverage, and rerun scoped with `orgId` to see
+        a capped GC's remaining matches.
       requestBody:
         required: true
         content:
@@ -461,7 +467,10 @@ components:
                 description: e.g. "B2AI_ORG:114".
               name:
                 type: string
-                description: The Grand Challenge org's display name from the organizations table.
+                description: >
+                  The Grand Challenge org's display name. Best-effort: the live
+                  organizations-table name, falling back to a bundled label
+                  if that lookup fails -- never fails the call.
               title:
                 type: string
                 description: The D4D document's own title.
@@ -486,8 +495,11 @@ components:
         section:
           type: string
           description: >
-            A section id from a prior outline call (omit, along with `field`,
-            to get the outline instead). Not used together with `field`.
+            A section id or heading from a prior outline call, e.g.
+            "collection-process" or "Collection Process" (matching is case-
+            and spacing-insensitive, with spaces/hyphens/underscores treated
+            as equivalent -- same as `field`). Omit, along with `field`, to
+            get the outline instead. Not used together with `field`.
         field:
           type: string
           description: >
@@ -508,10 +520,13 @@ components:
           type: string
         orgName:
           type: string
-          description: Present in the outline and section responses (absent from a field response).
+          description: >
+            Present in the outline, section, and field responses. Best-effort:
+            the live organizations-table name, falling back to a bundled
+            label if that lookup fails -- never fails the call.
         orgLink:
           type: string
-          description: Present in the outline and section responses (absent from a field response).
+          description: Present in the outline, section, and field responses.
         title:
           type: string
           description: Present in the outline response (neither `section` nor `field` given).
@@ -632,7 +647,10 @@ components:
                 type: string
               name:
                 type: string
-                description: The Grand Challenge org's display name from the organizations table.
+                description: >
+                  The Grand Challenge org's display name. Best-effort: the live
+                  organizations-table name, falling back to a bundled label
+                  if that lookup fails -- never fails the call.
               present:
                 type: boolean
                 description: Whether this org's D4D has a value for the field.
@@ -688,6 +706,34 @@ components:
               snippet:
                 type: string
                 description: Up to ~300 characters of context around the match.
+        orgHits:
+          type: array
+          description: >
+            Present only when `orgId` was omitted (searching all 4 GCs).
+            One entry per Grand Challenge, including ones with no matches at
+            all, so a caller can tell "this GC has none" apart from "this GC
+            had matches that got capped" -- check this (and `truncated`)
+            before concluding a GC doesn't cover something, and rerun with
+            `orgId` to see the rest of a capped GC's matches. The cap is
+            allocated round-robin by rank across GCs (one hit from each GC
+            with one at that rank, in turn), not first-come-first-served, so
+            a GC with many matches can no longer starve the ones after it.
+          items:
+            type: object
+            properties:
+              orgId:
+                type: string
+              matches:
+                type: integer
+                description: Total fields matching the query for this GC, before capping.
+              returned:
+                type: integer
+                description: How many of this GC's matches made it into `results`.
+        truncated:
+          type: boolean
+          description: >
+            True if any match (in any GC searched) didn't make it into
+            `results` because of the D4D_MAX_SNIPPETS cap.
         error:
           type: string
       additionalProperties: false

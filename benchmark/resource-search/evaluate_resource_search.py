@@ -15,9 +15,10 @@ Usage:
     python evaluate_resource_search.py --agent-id ABC123 --no-judge
     python evaluate_resource_search.py --agent-id ABC123 --allow-prod
 
-No B2AI agent has been deployed yet, so --agent-id has no default, and
-PROD_AGENT_ID below is a placeholder that won't match a real agent ID until
-one exists -- fill it in then so the prod-guard (same pattern as
+--agent-id has no default -- pass the dev or prod agent ID for the stack
+you're testing (see agents/README.md: dev 1DKMRGU8YQ / registration 355,
+prod SPK51S50V1 / registration 356). PROD_AGENT_ID below is set to the real
+prod agent id so the prod-guard (same pattern as
 benchmark/redteam/evaluate_redteam.py) is meaningful.
 
 Trace decoding:
@@ -47,9 +48,8 @@ import lambda_function as lf  # noqa: E402
 
 PORTAL_ORIGIN = "https://b2ai.standards.synapse.org"
 
-# Placeholder until a real B2AI prod agent exists -- fill in then, same
-# pattern as benchmark/redteam/evaluate_redteam.py's PROD_AGENT_ID guard.
-PROD_AGENT_ID = "REPLACE_ME_B2AI_PROD_AGENT_ID"
+# Same pattern as benchmark/redteam/evaluate_redteam.py's PROD_AGENT_ID guard.
+PROD_AGENT_ID = "SPK51S50V1"  # registration 356, see agents/README.md
 
 
 # ---------------------------------------------------------------------------
@@ -915,7 +915,7 @@ def parse_args(argv=None) -> argparse.Namespace:
         description="Evaluate resource-search correctness for the Bridge2AI Standards Explorer Copilot.",
     )
     parser.add_argument("--agent-id", required=True,
-                         help="Bedrock Agent ID (no default -- no B2AI agent has been deployed yet)")
+                         help="Bedrock Agent ID (no default -- see agents/README.md for the dev/prod agent ids)")
     parser.add_argument("--alias-id", default="TSTALIASID", help="Bedrock Agent alias ID (default: %(default)s)")
     parser.add_argument("--profile", default=None, help="AWS profile name (default: env credentials)")
     parser.add_argument("--region", default="us-east-1", help="AWS region (default: %(default)s)")

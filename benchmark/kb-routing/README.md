@@ -131,11 +131,11 @@ python evaluate_kb_routing.py --agent-id ABC123 --judge          # also run LLM 
 python evaluate_kb_routing.py --agent-id ABC123 -n 3             # quick test: first 3 sessions
 ```
 
-`--agent-id` is required — no B2AI agent has been deployed yet. The default alias `TSTALIASID` always points to the DRAFT version. If you've updated the agent (instructions, model, action groups) without preparing it, run `aws bedrock-agent prepare-agent --agent-id <ID>` first — otherwise the eval will test the previous prepared version, not your latest changes.
+`--agent-id` is required — no default (see `agents/README.md` for the dev/prod agent ids). The default alias `TSTALIASID` always points to the DRAFT version. If you've updated the agent (instructions, model, action groups) without preparing it, run `aws bedrock-agent prepare-agent --agent-id <ID>` first — otherwise the eval will test the previous prepared version, not your latest changes.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--agent-id` | _(required)_ | Bedrock Agent ID — no B2AI agent is deployed yet |
+| `--agent-id` | _(required)_ | Bedrock Agent ID — see `agents/README.md` for the dev/prod agent ids |
 | `--alias-id` | `TSTALIASID` | Bedrock Agent alias ID (DRAFT) |
 | `-n` | all | Only run the first N sessions |
 | `--judge` | off | Enable LLM judge for answer quality scoring |

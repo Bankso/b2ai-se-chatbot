@@ -265,8 +265,15 @@ def resolve_canonical_runs(
             return None
         outputs = data.get("outputs") or {}
         entry = outputs.get(variant)
-        yaml_path = _resolve_artifact_path((entry or {}).get("path"), path)
-        if entry and not yaml_path:
+        if entry is None:
+            available = sorted(outputs)
+            raise SystemExit(
+                f"ERROR: {project}'s canonical run {label!r} ({path}) has no "
+                f"outputs[{variant!r}] entry -- refusing to guess. Available "
+                f"variants: {available}"
+            )
+        yaml_path = _resolve_artifact_path(entry.get("path"), path)
+        if not yaml_path:
             raise SystemExit(
                 f"ERROR: {path}'s outputs[{variant!r}].path "
                 f"({entry.get('path')!r}) isn't a resolvable artifact path "
@@ -348,6 +355,19 @@ def _load_upstream_renderer(source: str):
     resulting HTML actually contains (see `_verify_and_collect`), so if this
     reasoning is ever wrong for a future renderer version, the mismatch
     check fails loudly rather than silently mislabeling a field.
+
+    The stubs only need to exist in `sys.modules` for the duration of the
+    `exec()` call below: the module's only module-level reference is
+    `from data_sheets_schema.resources import resource_path` (binds the
+    stub function directly into the exec'd module's own namespace, not a
+    lookup that revisits `sys.modules` later), and its only other use of
+    `data_sheets_schema` (a local `from data_sheets_schema.schema_view
+    import shared_view` inside `_load_schema_info`) lives in a method
+    `_SandboxRenderer` overrides below and therefore never runs. So
+    `sys.modules` is restored to its prior state (entries that existed
+    before are put back, entries added here are removed) right after
+    `exec()` finishes, rather than being left installed for the returned
+    renderer's lifetime.
     """
     resources_stub = types.ModuleType("data_sheets_schema.resources")
 
@@ -361,14 +381,20 @@ def _load_upstream_renderer(source: str):
     pkg_stub = types.ModuleType("data_sheets_schema")
     pkg_stub.__path__ = []
     sys_modules_backup = {}
-    import sys as _sys
     for name, mod in (("data_sheets_schema", pkg_stub),
                       ("data_sheets_schema.resources", resources_stub)):
-        sys_modules_backup[name] = _sys.modules.get(name)
-        _sys.modules[name] = mod
+        sys_modules_backup[name] = sys.modules.get(name)
+        sys.modules[name] = mod
 
     ns: Dict[str, Any] = {"__name__": "upstream_human_readable_renderer"}
-    exec(compile(source, "<pinned human_readable_renderer.py>", "exec"), ns)
+    try:
+        exec(compile(source, "<pinned human_readable_renderer.py>", "exec"), ns)
+    finally:
+        for name, prior_mod in sys_modules_backup.items():
+            if prior_mod is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = prior_mod
     BaseRenderer = ns["HumanReadableRenderer"]
 
     class _SandboxRenderer(BaseRenderer):

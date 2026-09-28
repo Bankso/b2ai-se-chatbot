@@ -9,8 +9,9 @@ Usage:
     python evaluate_bedrock_agent.py --agent-id ABC123 --alias-id XYZ789
     python evaluate_bedrock_agent.py --dataset help_qa_dataset_anthropic.json --profile my-aws-profile
 
-No B2AI agent has been deployed yet, so --agent-id has no default — pass the
-dev agent ID for the stack you're testing (see agents/README.md).
+--agent-id has no default — pass the dev or prod agent ID for the stack
+you're testing (see agents/README.md: dev 1DKMRGU8YQ / registration 355,
+prod SPK51S50V1 / registration 356).
 """
 
 import argparse
@@ -284,7 +285,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--agent-id",
         required=True,
-        help="Bedrock Agent ID (no default — no B2AI agent has been deployed yet)",
+        help="Bedrock Agent ID (no default — see agents/README.md for the dev/prod agent ids)",
     )
     parser.add_argument(
         "--alias-id",

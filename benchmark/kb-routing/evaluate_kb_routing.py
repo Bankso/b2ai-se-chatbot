@@ -13,7 +13,9 @@ Usage:
     python evaluate_kb_routing.py --agent-id ABC123 --session s-docs-single-01  # one session
     python evaluate_kb_routing.py --agent-id ABC123 --profile my-profile
 
-No B2AI agent has been deployed yet, so --agent-id has no default.
+--agent-id has no default -- pass the dev or prod agent ID for the stack
+you're testing (see agents/README.md: dev 1DKMRGU8YQ / registration 355,
+prod SPK51S50V1 / registration 356).
 
 The default alias TSTALIASID always points to the DRAFT version. If you've
 updated the agent (instructions, model, action groups) without preparing it,
@@ -459,7 +461,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--agent-id",
         required=True,
-        help="Bedrock Agent ID (no default — no B2AI agent has been deployed yet)",
+        help="Bedrock Agent ID (no default — see agents/README.md for the dev/prod agent ids)",
     )
     parser.add_argument(
         "--alias-id",

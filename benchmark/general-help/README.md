@@ -147,7 +147,7 @@ cd benchmark/general-help
 python evaluate_bedrock_agent.py
 ```
 
-`--agent-id` is required — no B2AI agent is deployed yet, so there is no default
+`--agent-id` is required — no default (see `agents/README.md` for the dev/prod agent ids)
 
 ```bash
 python evaluate_bedrock_agent.py \
@@ -164,7 +164,7 @@ The default alias `TSTALIASID` always points to the DRAFT version. If you've upd
 
 | Flag | Default | Description |
 |---|---|---|
-| `--agent-id` | _(required)_ | Bedrock Agent ID — no B2AI agent is deployed yet |
+| `--agent-id` | _(required)_ | Bedrock Agent ID — see `agents/README.md` for the dev/prod agent ids |
 | `--alias-id` | `TSTALIASID` | Bedrock Agent alias ID |
 | `--profile` | `default` | AWS profile from `~/.aws/credentials` |
 | `--region` | `us-east-1` | AWS region |
