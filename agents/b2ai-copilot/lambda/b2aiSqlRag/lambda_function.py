@@ -1569,9 +1569,10 @@ def search_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
     hits -- at most one per field, so a field matched only in its label
     still surfaces (with a snippet from the start of its text).
 
-    Scoped to one `orgId`: hits are capped in section/field order, same as
-    before this fix, plus `truncated` (True if that org had more matches
-    than fit under the cap).
+    Scoped to one `orgId`: hits come in section/field order, one page of
+    D4D_MAX_SNIPPETS at a time via `offset`/`nextOffset`, with
+    `totalMatches` and `truncated` (True if that org has matches outside
+    this page).
 
     Across all GCs (no `orgId`): filling the shared cap in GC_ORG_IDS order
     let one early, hit-heavy org exhaust the whole cap and starve every GC
@@ -1610,12 +1611,20 @@ def search_d4d(params: Dict[str, Any]) -> Dict[str, Any]:
     if org_id:
         doc = _D4D_DOCS.get(org_id)
         all_hits = _d4d_search_org_hits(org_id, doc, needle) if doc else []
-        results = all_hits[:D4D_MAX_SNIPPETS]
-        return {
+        # Paged by hit index, so a scoped rerun can reach every match of a
+        # GC that has more than one page's worth.
+        offset = _d4d_clamp_offset(params.get("offset"))
+        results = all_hits[offset:offset + D4D_MAX_SNIPPETS]
+        result = {
             "query": query,
             "results": results,
+            "totalMatches": len(all_hits),
             "truncated": len(all_hits) > len(results),
         }
+        next_offset = offset + len(results)
+        if next_offset < len(all_hits):
+            result["nextOffset"] = next_offset
+        return result
 
     # No orgId: gather every org's full, uncapped match list up front so the
     # cap can be allocated fairly instead of first-come-first-served.

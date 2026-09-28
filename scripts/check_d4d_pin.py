@@ -162,23 +162,26 @@ def main() -> int:
         print(f"[OK] Lambda TABLES['d4d'] pin matches d4d_data.json: {lambda_pin!r}")
 
     # --- 2. Query the live D4D_content table ---
+    # Read the version the portal serves, not source.synapseTable: a
+    # versioned snapshot never changes, so comparing against the bundle's
+    # recorded version could never report that the portal caught up. The
+    # Lambda's TABLES['d4d'] mirrors the portal's own pin
+    # (scripts/check_table_pins.py keeps it honest), so once the portal
+    # publishes and re-pins a new version, this reads that one.
+    served_table = lambda_pin or pinned_synapse_table
     try:
-        bare_id = _bare_id(pinned_synapse_table)
-        # Same split the Lambda's `_run_query` usage follows everywhere (see
-        # `sql_query`/`get_columns_fn` in lambda_function.py): the SQL `FROM`
-        # clause carries the *versioned* pinned id so the query is pinned to
-        # that exact snapshot, while the request path's entityId is the bare,
-        # unversioned id (`_bare_id`), since that's what the Synapse
-        # table-query REST API's entity path takes.
+        bare_id = _bare_id(served_table)
+        # Versioned id in the SQL FROM, bare id in the request path -- the
+        # same split the Lambda's `_run_query` callers use.
         bundle = _run_query(
             bare_id,
-            f"SELECT content_id, content_text FROM {pinned_synapse_table}",
+            f"SELECT content_id, content_text FROM {served_table}",
             10,
             PART_RESULTS,
         )
         live_rows = _parse_bundle(bundle)
     except Exception as e:
-        print(f"ERROR: failed to query {pinned_synapse_table}: {e}", file=sys.stderr)
+        print(f"ERROR: failed to query {served_table}: {e}", file=sys.stderr)
         return 2
 
     live_by_org = {
@@ -229,7 +232,7 @@ def main() -> int:
             print(f"[DRIFT] {org_id} ({gc}): see below")
 
     print(f"\nChecked {checked}/{len(docs)} bundled docs against the live "
-          f"{pinned_synapse_table} table.")
+          f"{served_table} table.")
 
     if drift:
         print("\nDrift detected:")

@@ -271,8 +271,8 @@ paths:
         information?" -- use `compareD4D` instead when the field IS known.
         Across all GCs, the ~20-hit cap is allocated fairly across them
         (not first-come-first-served); check `orgHits`/`truncated` before
-        concluding a GC has no coverage, and rerun scoped with `orgId` to see
-        a capped GC's remaining matches.
+        concluding a GC has no coverage, and rerun scoped with `orgId` (paging
+        with `offset`/`nextOffset`) to see a capped GC's remaining matches.
       requestBody:
         required: true
         content:
@@ -678,6 +678,11 @@ components:
           description: >
             Optional Grand Challenge org id to scope the search to one D4D
             (omit to search across all of them).
+        offset:
+          type: integer
+          description: >
+            With `orgId` only: the hit index to start from, for paging
+            through a GC's matches. Pass back a response's `nextOffset`.
       additionalProperties: false
     SearchD4DResponse:
       type: object
@@ -714,7 +719,8 @@ components:
             all, so a caller can tell "this GC has none" apart from "this GC
             had matches that got capped" -- check this (and `truncated`)
             before concluding a GC doesn't cover something, and rerun with
-            `orgId` to see the rest of a capped GC's matches. The cap is
+            `orgId` (paging with `offset`/`nextOffset`) to see the rest of a
+            capped GC's matches. The cap is
             allocated round-robin by rank across GCs (one hit from each GC
             with one at that rank, in turn), not first-come-first-served, so
             a GC with many matches can no longer starve the ones after it.
@@ -729,11 +735,20 @@ components:
               returned:
                 type: integer
                 description: How many of this GC's matches made it into `results`.
+        totalMatches:
+          type: integer
+          description: With `orgId` only -- that GC's total matching fields.
+        nextOffset:
+          type: integer
+          description: >
+            With `orgId` only, present when more matches remain; pass back
+            as `offset` to get the next page.
         truncated:
           type: boolean
           description: >
             True if any match (in any GC searched) didn't make it into
-            `results` because of the D4D_MAX_SNIPPETS cap.
+            `results` because of the D4D_MAX_SNIPPETS cap (with `orgId`, on
+            this page).
         error:
           type: string
       additionalProperties: false

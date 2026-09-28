@@ -1526,6 +1526,23 @@ class TestSearchD4D(_SampleD4DDataMixin):
         assert result["truncated"] is True
         assert "orgHits" not in result
 
+    def test_search_scoped_pages_through_every_match(self):
+        # 114 has 22 "widget" matches: with a page size of 5, following
+        # nextOffset must reach all of them exactly once, in order.
+        full = search_d4d({"query": "widget", "orgId": "B2AI_ORG:114"})
+        seen, offset = [], 0
+        with patch("lambda_function.D4D_MAX_SNIPPETS", 5):
+            while True:
+                page = search_d4d({"query": "widget", "orgId": "B2AI_ORG:114", "offset": offset})
+                assert page["totalMatches"] == 22
+                seen.extend(h["field"] for h in page["results"])
+                if "nextOffset" not in page:
+                    break
+                offset = page["nextOffset"]
+        assert len(seen) == 22 == len(set(seen))
+        assert seen[:len(full["results"])] == [h["field"] for h in full["results"]]
+        assert page["truncated"] is True  # last page still leaves earlier ones out
+
     def test_search_no_hits(self):
         result = search_d4d({"query": "blockchain"})
         assert result["results"] == []
