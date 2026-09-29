@@ -20,7 +20,7 @@ The workflow is: make changes on a branch → manually trigger the `deploy-copil
 
 ## CI/CD setup
 
-`.github/workflows/deploy-copilot-sql.yml` handles deployments. It runs manually (`workflow_dispatch`, with an `environment` input of `dev` or `prod`); the push-to-main trigger is disabled until a first deploy has succeeded. Every run does three steps in order: upload the Lambda package to S3, deploy the stack (which creates the Lambda from that package on a first deploy), then push the code into the function (so code-only changes land even when the template is unchanged). The stack deploy passes `--s3-bucket` because the template is larger than CloudFormation's 51,200-byte inline limit.
+`.github/workflows/deploy-copilot-sql.yml` handles deployments. It runs manually (`workflow_dispatch`, with an `environment` input of `dev` or `prod`); the push-to-main trigger is disabled until a first deploy has succeeded. Every run does these steps in order: upload the Lambda package to S3; deploy the stack (which creates the Lambda from that package on a first deploy); point the stack's agent alias at a new version built from the updated DRAFT (`scripts/promote_agent_alias.sh`, which only acts when the agent changed, because a stack update alone leaves the alias on its old version); then push the code into the function (so code-only changes land even when the template is unchanged). The stack deploy passes `--s3-bucket` because the template is larger than CloudFormation's 51,200-byte inline limit.
 
 **CI/CD is optional to get started** — you can deploy manually with `aws cloudformation deploy` first and set this up later.
 

@@ -74,10 +74,10 @@ jobs:
             echo "S3_KEY=lambda/b2aiSqlRag-dev.zip" >> "$GITHUB_ENV"
           fi
 
-      # Manual (workflow_dispatch) deploys always run all three steps, in this
+      # Manual (workflow_dispatch) deploys always run every step, in this
       # order: the stack creates the Lambda from the uploaded package on a
-      # first deploy, and the final code push lands code-only changes when
-      # the template itself is unchanged.
+      # first deploy, the alias step serves agent changes, and the final code
+      # push lands code-only changes when the template itself is unchanged.
       - name: Upload Lambda package
         run: |
           cd "$LAMBDA_DIR"
@@ -100,6 +100,12 @@ jobs:
                 LambdaS3Key="$S3_KEY" \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset
+
+      # A stack update refreshes the agent's DRAFT but not the alias, which
+      # keeps serving its old version; this snapshots the DRAFT as a new
+      # version and repoints the alias when the agent changed.
+      - name: Point the agent alias at the updated agent
+        run: scripts/promote_agent_alias.sh "$STACK_NAME"
 
       - name: Update Lambda code
         run: |

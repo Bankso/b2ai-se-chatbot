@@ -8,9 +8,10 @@
 # CloudFormation stacks. Run `make check-aws` first to confirm which
 # identity/account you're about to act as.
 #
-# The combined deploy-sql-{dev,prod} targets run the same three steps as the
+# The combined deploy-sql-{dev,prod} targets run the same steps as the
 # workflow: upload the package, deploy the stack (which creates the Lambda on
-# a first deploy), then push the code. The -lambda and -stack targets run a
+# a first deploy) and point the agent alias at a new version when the agent
+# changed, then push the code. The -lambda and -stack targets run a
 # subset when you know what changed; -lambda needs the stack to exist.
 #
 # SQL stack deploys don't take a Synapse token override: SynapseAuthToken
@@ -62,7 +63,8 @@ help:
 	@echo "  make deploy-sql-dev               upload package, deploy the dev stack, push the code"
 	@echo "                                    (use this for a first deploy -- it creates the Lambda)"
 	@echo "  make deploy-sql-dev-lambda        upload + push dev Lambda code only (stack must exist)"
-	@echo "  make deploy-sql-dev-stack         deploy the dev CloudFormation stack only"
+	@echo "  make deploy-sql-dev-stack         deploy the dev CloudFormation stack only (and repoint"
+	@echo "                                    the agent alias if the agent changed)"
 	@echo "                                    (expects the package already uploaded)"
 	@echo "  make deploy-sql-prod              same, against PRODUCTION (asks for confirmation)"
 	@echo "  make deploy-sql-prod-lambda"
@@ -81,7 +83,13 @@ check-aws:
 # A full deploy uploads the package, then deploys the stack (which creates the
 # Lambda from that package on a first deploy), then pushes the code into the
 # function (so a code-only change still lands when the stack is unchanged).
+# Every stack deploy ends with scripts/promote_agent_alias.sh: a stack update
+# refreshes the agent's DRAFT but leaves the alias on its old version, so the
+# script snapshots the DRAFT as a new version and repoints the alias (only if
+# the DRAFT changed).
 # The -lambda targets only work once the stack -- and so the function -- exists.
+
+PROMOTE_ALIAS = AWS_REGION=$(AWS_REGION) $(if $(AWS_PROFILE),AWS_PROFILE=$(AWS_PROFILE),) scripts/promote_agent_alias.sh
 
 deploy-sql-dev: deploy-sql-dev-upload deploy-sql-dev-stack deploy-sql-dev-code
 
@@ -109,6 +117,7 @@ deploy-sql-dev-stack:
 			LambdaS3Key=lambda/b2aiSqlRag-dev.zip \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-fail-on-empty-changeset
+	$(PROMOTE_ALIAS) $(SQL_STACK_NAME_DEV)
 
 deploy-sql-prod:
 	$(call CONFIRM_PROD,SQL Lambda + stack)
@@ -144,3 +153,4 @@ deploy-sql-prod-stack-unconfirmed:
 			LambdaS3Key=lambda/b2aiSqlRag.zip \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-fail-on-empty-changeset
+	$(PROMOTE_ALIAS) $(SQL_STACK_NAME_PROD)

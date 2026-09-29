@@ -75,9 +75,12 @@
 #       CLI, or a separate stack) because they involve their own vector
 #       store, embedding model, data sources, and sync schedule.
 #
-# The template sets AutoPrepare: true, so the agent is re-prepared
-# automatically after each update.  The alias will point to the new
-# version once the stack update completes.
+# The template sets AutoPrepare: true, so the agent's DRAFT is re-prepared
+# automatically after each update.  The alias does NOT follow: with no
+# RoutingConfiguration, a stack update that changes only the agent leaves
+# the alias on the version it already routes to.  The deploy paths (Makefile
+# and deploy-copilot-sql.yml) run scripts/promote_agent_alias.sh after the
+# stack update to snapshot the DRAFT and repoint the alias.
 # ---------------------------------------------------------------------------
 
 AWSTemplateFormatVersion: "2010-09-09"

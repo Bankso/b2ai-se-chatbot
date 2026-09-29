@@ -45,7 +45,7 @@ It supports:
 - **Manual dispatch** (`workflow_dispatch`) with an `environment` input (`dev` default, or `prod`). Trigger from any branch via the Actions UI or `gh workflow run deploy-copilot-sql.yml --ref my-branch -f environment=dev`.
 - **Merge to main** — disabled for now (commented out in the workflow) until the OIDC role exists and a first manual deploy has succeeded.
 
-Every run does the same three steps in order: upload the Lambda package to S3, deploy the stack (which creates the Lambda from that package on a first deploy), then push the code into the function (so code-only changes land even when the template is unchanged).
+Every run does the same steps in order: upload the Lambda package to S3; deploy the stack (which creates the Lambda from that package on a first deploy); run `scripts/promote_agent_alias.sh` to point the stack's agent alias at a new version when the agent changed; then push the code into the function (so code-only changes land even when the template is unchanged). The alias step is needed because a stack update refreshes the agent's DRAFT but leaves the alias on its old version. On 2026-09-29 the dev `live` alias was found still serving version 1 after a deploy. The step only creates a version when the DRAFT changed, and it needs `bedrock:GetAgent`, `GetAgentAlias`, `GetAgentVersion` and `UpdateAgentAlias` on top of the CloudFormation and Lambda permissions.
 
 AWS credentials use GitHub OIDC via an IAM role, stored as the `AWS_OIDC_ROLE_ARN` repo secret. **No such role has been provisioned yet for this repo** — an AWS admin needs to create one scoped to `b2ai-se-chatbot` before this workflow will succeed. The workflow's `S3_BUCKET` (and the template's `LambdaS3Bucket` default) is `b2ai-se-copilot`.
 
@@ -55,7 +55,7 @@ The repo root `Makefile` is a local equivalent of `deploy-copilot-sql.yml`, for 
 
 ```sh
 make check-aws                    # confirm local AWS credentials/identity
-make deploy-sql-dev               # upload, deploy the dev stack, push code (use for a first deploy)
+make deploy-sql-dev               # upload, deploy the dev stack, repoint the alias, push code (use for a first deploy)
 make deploy-sql-dev-lambda        # upload + push dev Lambda code only (stack must already exist)
 make deploy-sql-dev-stack         # deploy the dev CloudFormation stack only
 make deploy-sql-prod              # same, against PRODUCTION (asks for confirmation)
