@@ -1,5 +1,9 @@
-baseURL = 'https://mc2-center.github.io/cckp-chatbot/'
-title = 'CCKP Copilot Docs'
+# baseURL tracks the current git remote (github.com/Bankso/b2ai-se-chatbot,
+# served at bankso.github.io/b2ai-se-chatbot/ via GitHub Pages). If this repo
+# is ever transferred/renamed, or the docs site is forked again, update this
+# to match the new remote/Pages URL.
+baseURL = 'https://bankso.github.io/b2ai-se-chatbot/'
+title = 'Bridge2AI Standards Explorer Copilot Docs'
 theme = 'hugo-book'
 
 disablePathToLower = true
@@ -14,12 +18,12 @@ disablePathToLower = true
   BookTheme = 'light'
   BookSection = 'docs'
   BookFavicon = 'favicon.svg'
-  BookRepo = 'https://github.com/mc2-center/cckp-chatbot'
+  BookRepo = 'https://github.com/Bankso/b2ai-se-chatbot'
   BookSearch = true
   BookComments = false
   BookPortableLinks = 'warning'
 
 [[menu.after]]
   name = 'GitHub'
-  url = 'https://github.com/mc2-center/cckp-chatbot'
+  url = 'https://github.com/Bankso/b2ai-se-chatbot'
   weight = 10

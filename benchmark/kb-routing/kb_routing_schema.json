@@ -14,8 +14,8 @@
       },
       "session_type": {
         "type": "string",
-        "enum": ["DOCS", "GRAPH", "MIXED", "BOTH", "NONE"],
-        "description": "Routing pattern for the session. DOCS = all turns expect docs KB; GRAPH = all turns expect KG; MIXED = turns route to different sources; BOTH = all turns accept either/both sources; NONE = no KB lookup expected for any turn."
+        "enum": ["DOCS", "RAG", "MIXED", "BOTH", "NONE"],
+        "description": "Routing pattern for the session. DOCS = all turns expect the docs KB; RAG = all turns expect the resource backend; MIXED = turns route to different sources; BOTH = all turns accept either/both sources; NONE = no KB lookup expected for any turn."
       },
       "description": {
         "type": "string",
@@ -44,8 +44,8 @@
             },
             "expected": {
               "type": "string",
-              "enum": ["DOCS", "GRAPH", "BOTH", "REDIRECT", "NONE"],
-              "description": "Which source(s) the agent should use. DOCS = documentation KB; GRAPH = KG action groups (SPARQL); BOTH = either is acceptable or both should be used; REDIRECT = agent should navigate via redirect action; NONE = no KB lookup expected (agent should answer from general knowledge or decline)."
+              "enum": ["DOCS", "RAG", "BOTH", "REDIRECT", "NONE"],
+              "description": "Which source(s) the agent should use. DOCS = documentation KB; RAG = resource-backend action groups (SQL or SPARQL); BOTH = either is acceptable or both should be used; REDIRECT = agent should navigate via redirect action; NONE = no KB lookup expected (agent should answer from general knowledge or decline)."
             },
             "persona": {
               "type": "string",

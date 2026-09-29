@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Evaluate KB source routing for the CCKP Copilot multi-source Bedrock Agent.
+"""Evaluate KB source routing for the Bridge2AI Standards Explorer Copilot multi-source Bedrock Agent.
 
 Invokes the agent with each turn in each session (reusing session IDs across
 turns), captures Bedrock trace events to detect which KB source was used
-(DOCS knowledge base vs. GRAPH action groups), and reports KB source selection
-accuracy alongside answer quality metrics.
+(DOCS knowledge base vs. RAG resource-backend action groups), and reports KB
+source selection accuracy alongside answer quality metrics.
 
 Usage:
     python evaluate_kb_routing.py --agent-id ABC123        # routing only
@@ -13,7 +13,9 @@ Usage:
     python evaluate_kb_routing.py --agent-id ABC123 --session s-docs-single-01  # one session
     python evaluate_kb_routing.py --agent-id ABC123 --profile my-profile
 
-No CCKP agent has been deployed yet, so --agent-id has no default.
+--agent-id has no default -- pass the dev or prod agent ID for the stack
+you're testing (see agents/README.md: dev 1DKMRGU8YQ / registration 355,
+prod SPK51S50V1 / registration 356).
 
 The default alias TSTALIASID always points to the DRAFT version. If you've
 updated the agent (instructions, model, action groups) without preparing it,
@@ -22,7 +24,7 @@ eval will test the previous prepared version, not your latest changes.
 
 Detection logic:
     DOCS:     KNOWLEDGE_BASE invocation in trace
-    GRAPH:    ACTION_GROUP invocation in trace (SPARQL Lambda calls)
+    RAG:      ACTION_GROUP invocation in trace (SQL or SPARQL Lambda calls)
     REDIRECT: <actions><redirect> tag detected in response text
 """
 
@@ -51,7 +53,7 @@ def invoke_agent(
 ) -> tuple[str, list[str], set[str]]:
     """Invoke agent and return (response_text, cited_urls, sources_used).
 
-    sources_used is a set of "DOCS", "GRAPH", and/or "REDIRECT" detected from
+    sources_used is a set of "DOCS", "RAG", and/or "REDIRECT" detected from
     trace events and response text patterns.
     cited_urls are extracted from Markdown links in the response text.
     """
@@ -82,7 +84,7 @@ def invoke_agent(
             inv_input = orch.get("invocationInput", {})
             inv_type = inv_input.get("invocationType", "")
             if inv_type == "ACTION_GROUP":
-                sources_used.add("GRAPH")
+                sources_used.add("RAG")
             elif inv_type == "KNOWLEDGE_BASE":
                 sources_used.add("DOCS")
 
@@ -90,7 +92,7 @@ def invoke_agent(
             obs = orch.get("observation", {})
             obs_type = obs.get("type", "")
             if obs_type == "ACTION_GROUP":
-                sources_used.add("GRAPH")
+                sources_used.add("RAG")
             elif obs_type == "KNOWLEDGE_BASE":
                 sources_used.add("DOCS")
 
@@ -117,7 +119,7 @@ def score_source_selection(expected: str, sources_used: set[str]) -> dict:
     Scoring:
       2 — correct and efficient: used exactly the expected source(s); or NONE and no sources used
       1 — correct but over-queried: used the expected source plus unnecessary extras
-          (only applies to DOCS/GRAPH turns; BOTH turns are never penalised for extra sources)
+          (only applies to DOCS/RAG turns; BOTH turns are never penalised for extra sources)
       0 — wrong: used wrong/no source when one was expected; or used any source when NONE expected
      -1 — no trace detected (excluded from accuracy reporting)
 
@@ -127,10 +129,10 @@ def score_source_selection(expected: str, sources_used: set[str]) -> dict:
     """
     if expected == "DOCS":
         expected_set = {"DOCS"}
-    elif expected == "GRAPH":
-        expected_set = {"GRAPH"}
+    elif expected == "RAG":
+        expected_set = {"RAG"}
     elif expected == "BOTH":
-        expected_set = {"DOCS", "GRAPH"}
+        expected_set = {"DOCS", "RAG"}
     elif expected == "REDIRECT":
         if "REDIRECT" in sources_used:
             return {"kb_used": sorted(sources_used), "kb_score": 2, "kb_correct": True}
@@ -155,8 +157,8 @@ def score_source_selection(expected: str, sources_used: set[str]) -> dict:
         kb_score = 2
     elif expected_set.issubset(sources_used):
         # Right source used but unnecessary extras consulted
-        # BOTH already expects any/both, so extras are only penalised for DOCS/GRAPH
-        kb_score = 1 if expected in ("DOCS", "GRAPH") else 2
+        # BOTH already expects any/both, so extras are only penalised for DOCS/RAG
+        kb_score = 1 if expected in ("DOCS", "RAG") else 2
     elif correct_used:
         # Some expected sources used but not all (only reachable for BOTH)
         kb_score = 1
@@ -195,13 +197,13 @@ def judge_answer(
     """
     source_hint = {
         "DOCS": "documentation/process/policy information",
-        "GRAPH": "specific data counts, lists, or records from the CCKP resource backend",
+        "RAG": "specific data counts, lists, or records from the B2AI resource backend (standards, datasets, organizations, topics, substrates, manifest, D4D)",
         "BOTH": "a combination of documentation guidance and specific portal data",
         "REDIRECT": "a redirect action navigating the user to the appropriate portal page",
     }.get(expected, "relevant information")
 
     prompt = (
-        "You are evaluating an AI assistant's response for the Cancer Complexity Knowledge Portal (CCKP).\n\n"
+        "You are evaluating an AI assistant's response for the Bridge2AI Standards Explorer.\n\n"
         f"User question: {question}\n\n"
         f"Expected answer type: {source_hint}\n\n"
         f"Assistant's response: {agent_response}\n\n"
@@ -287,13 +289,13 @@ def print_metrics(results: list[dict]) -> None:
         n_kb = len(kb_df)
         routing_acc = kb_df["kb_correct"].mean()           # score >= 1: right source reached
         efficiency  = (kb_df["kb_score"] == 2).mean()     # score == 2: right source, no extras
-        over_query_df = kb_df[kb_df["expected"].isin(["DOCS", "GRAPH"])]
+        over_query_df = kb_df[kb_df["expected"].isin(["DOCS", "RAG"])]
         over_query = (over_query_df["kb_score"] == 1).mean() if len(over_query_df) else float("nan")
         wrong = (kb_df["kb_score"] == 0).mean()
 
         print(f"\nKB routing accuracy  (score ≥ 1): {routing_acc:.1%}  ({kb_df['kb_correct'].sum():.0f} / {n_kb})")
         print(f"KB routing efficiency (score = 2): {efficiency:.1%}  — right source, no unnecessary extras")
-        print(f"Over-query rate       (score = 1): {over_query:.1%}  — right source + extras  (DOCS/GRAPH turns only, n={len(over_query_df)})")
+        print(f"Over-query rate       (score = 1): {over_query:.1%}  — right source + extras  (DOCS/RAG turns only, n={len(over_query_df)})")
         print(f"Wrong source          (score = 0): {wrong:.1%}")
         if no_trace > 0:
             print(f"No trace detected:                 {no_trace} turns (excluded)")
@@ -304,7 +306,7 @@ def print_metrics(results: list[dict]) -> None:
     if len(kb_df) > 0:
         print("\nPer-source breakdown:")
         print(f"  {'Source':<6}  {'Accuracy':>8}  {'Efficiency':>10}  {'n':>4}")
-        for kb_type in ["DOCS", "GRAPH", "BOTH", "REDIRECT", "NONE"]:
+        for kb_type in ["DOCS", "RAG", "BOTH", "REDIRECT", "NONE"]:
             sub = kb_df[kb_df["expected"] == kb_type]
             if len(sub) == 0:
                 continue
@@ -454,12 +456,12 @@ def run_evaluation(args: argparse.Namespace) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate KB source routing for the CCKP Copilot multi-source Bedrock Agent.",
+        description="Evaluate KB source routing for the Bridge2AI Standards Explorer Copilot multi-source Bedrock Agent.",
     )
     parser.add_argument(
         "--agent-id",
         required=True,
-        help="Bedrock Agent ID (no default — no CCKP agent has been deployed yet)",
+        help="Bedrock Agent ID (no default — see agents/README.md for the dev/prod agent ids)",
     )
     parser.add_argument(
         "--alias-id",

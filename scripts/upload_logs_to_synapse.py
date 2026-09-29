@@ -12,10 +12,10 @@ type (`--folder`) so results stay organized as more benchmarks start
 uploading — e.g. `redteam`, `kb-routing`, `general-help`. The subfolder is
 created under `--parent-id` if it doesn't already exist.
 
-No CCKP eval-results Synapse project has been designated yet — DEFAULT_PARENT_ID
+No B2AI eval-results Synapse project has been designated yet — DEFAULT_PARENT_ID
 below is a placeholder. Pass a real project ID via `--parent-id` until one is
 chosen (the NF Portal Copilot's equivalent project is syn76878333, for
-reference on the expected layout — not reusable for CCKP's own results).
+reference on the expected layout — not reusable for B2AI's own results).
 
 Requires a Synapse account with upload access to that project and login
 credentials available to synapseclient (~/.synapseConfig or the
@@ -43,7 +43,7 @@ from pathlib import Path
 import synapseclient
 from synapseclient import File, Folder
 
-DEFAULT_PARENT_ID = "REPLACE_ME_CCKP_EVAL_RESULTS_PROJECT"
+DEFAULT_PARENT_ID = "REPLACE_ME_B2AI_EVAL_RESULTS_PROJECT"
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_PARENT_ID,
         help=(
             "Synapse project all eval results live under (default: "
-            f"{DEFAULT_PARENT_ID} — a placeholder; no CCKP project is designated yet)"
+            f"{DEFAULT_PARENT_ID} — a placeholder; no B2AI project is designated yet)"
         ),
     )
     parser.add_argument(

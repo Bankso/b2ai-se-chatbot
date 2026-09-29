@@ -1,0 +1,28 @@
+{
+  "messageVersion": "1.0",
+  "agent": {
+    "name": "b2ai-sql-agent",
+    "version": "test"
+  },
+  "actionGroup": "b2aiSqlRag",
+  "apiPath": "/d4d",
+  "httpMethod": "POST",
+  "requestBody": {
+    "content": {
+      "application/json": {
+        "properties": [
+          {
+            "name": "orgId",
+            "type": "string",
+            "value": "B2AI_ORG:114"
+          },
+          {
+            "name": "section",
+            "type": "string",
+            "value": "motivation"
+          }
+        ]
+      }
+    }
+  }
+}

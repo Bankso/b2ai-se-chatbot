@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Evaluate AWS Bedrock Agent — CCKP Copilot General Help
+"""Evaluate AWS Bedrock Agent — Bridge2AI Standards Explorer Copilot General Help
 
-Invokes a deployed CCKP Copilot (Bedrock Agent) with each question from
+Invokes a deployed Bridge2AI Standards Explorer Copilot (Bedrock Agent) with each question from
 the help_qa_dataset benchmark, scores responses with an LLM judge, and reports
 accuracy metrics.
 
@@ -9,8 +9,9 @@ Usage:
     python evaluate_bedrock_agent.py --agent-id ABC123 --alias-id XYZ789
     python evaluate_bedrock_agent.py --dataset help_qa_dataset_anthropic.json --profile my-aws-profile
 
-No CCKP agent has been deployed yet, so --agent-id has no default — pass the
-dev agent ID for the stack you're testing (see agents/README.md).
+--agent-id has no default — pass the dev or prod agent ID for the stack
+you're testing (see agents/README.md: dev 1DKMRGU8YQ / registration 355,
+prod SPK51S50V1 / registration 356).
 """
 
 import argparse
@@ -279,12 +280,12 @@ def run_evaluation(args: argparse.Namespace) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate the CCKP Copilot Bedrock Agent against help_qa_dataset.",
+        description="Evaluate the Bridge2AI Standards Explorer Copilot Bedrock Agent against help_qa_dataset.",
     )
     parser.add_argument(
         "--agent-id",
         required=True,
-        help="Bedrock Agent ID (no default — no CCKP agent has been deployed yet)",
+        help="Bedrock Agent ID (no default — see agents/README.md for the dev/prod agent ids)",
     )
     parser.add_argument(
         "--alias-id",

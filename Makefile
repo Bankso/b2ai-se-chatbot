@@ -1,6 +1,6 @@
-# Local equivalents of .github/workflows/deploy-copilot-sql.yml and
-# deploy-copilot-sparql.yml, so the CCKP Copilot stacks can be deployed from
-# a developer machine instead of only through CI.
+# Local equivalent of .github/workflows/deploy-copilot-sql.yml, so the
+# Bridge2AI Standards Explorer Copilot stacks can be deployed from a developer
+# machine instead of only through CI.
 #
 # Unlike CI, there's no OIDC role-assumption step here — you need AWS
 # credentials already configured locally (`aws configure` or `aws sso
@@ -8,18 +8,11 @@
 # CloudFormation stacks. Run `make check-aws` first to confirm which
 # identity/account you're about to act as.
 #
-# The workflows use a git-diff check against the previous commit to decide
-# whether to update the Lambda code, the CloudFormation stack, or both —
-# that heuristic doesn't translate well to an ad hoc local run, so this
-# Makefile instead exposes `-lambda`, `-stack`, and a combined target for
-# each variant/environment; pick whichever matches what you actually
-# changed.
-#
-# Required env vars (not committed — export these yourself; same names as
-# the GitHub repo secrets):
-#   CCKP_SPARQL_ENDPOINT   — for *-sparql-*-stack deploys (not deployable
-#                            yet — no hosted CCKP SPARQL endpoint exists;
-#                            see cloudformation.sparql.yaml's usage comments)
+# The combined deploy-sql-{dev,prod} targets run the same steps as the
+# workflow: upload the package, deploy the stack (which creates the Lambda on
+# a first deploy) and point the agent alias at a new version when the agent
+# changed, then push the code. The -lambda and -stack targets run a
+# subset when you know what changed; -lambda needs the stack to exist.
 #
 # SQL stack deploys don't take a Synapse token override: SynapseAuthToken
 # defaults to "" in the template, and `aws cloudformation deploy` reuses
@@ -30,87 +23,87 @@
 # Optional overrides:
 #   AWS_PROFILE            (default: your default AWS CLI profile)
 #   AWS_REGION             (default: us-east-1, matches the workflows)
-#   FOUNDATION_MODEL_ID    (default: anthropic.claude-sonnet-5)
-#   S3_BUCKET              (default: cckp-chatbot)
+#   FOUNDATION_MODEL_ID    (default: anthropic.claude-sonnet-4-6)
+#   S3_BUCKET              (default: b2ai-se-copilot)
 
 .DEFAULT_GOAL := help
 
 AWS_REGION ?= us-east-1
 FOUNDATION_MODEL_ID ?= anthropic.claude-sonnet-4-6
-S3_BUCKET ?= cckp-chatbot
+S3_BUCKET ?= b2ai-se-copilot
+AWS_PROFILE ?=
 
 AWS := aws --region $(AWS_REGION) $(if $(AWS_PROFILE),--profile $(AWS_PROFILE),)
 
-SQL_TEMPLATE := agents/cckp-copilot/cloudformation.sql.yaml
-SQL_LAMBDA_DIR := agents/cckp-copilot/lambda/cckpSqlRag
+SQL_TEMPLATE := agents/b2ai-copilot/cloudformation.sql.yaml
+SQL_LAMBDA_DIR := agents/b2ai-copilot/lambda/b2aiSqlRag
 
-# Current live resource names (confirmed 2026-08-21 against the actual
-# deployed stacks — the GitHub workflow's own STACK_NAME/AGENT_NAME values
-# are stale and don't match what's actually running).
-SQL_STACK_NAME_DEV ?= obanks-cckp-search-agent-8-21-2026-dev
-SQL_STACK_NAME_PROD ?= obanks-cckp-search-agent-8-21-2026
-SQL_AGENT_NAME_DEV ?= Cephy-sql-alpha-dev
-SQL_AGENT_NAME_PROD ?= Cephy-sql-alpha-prod
-SQL_LAMBDA_FN_DEV ?= Cephy-sql-alpha-dev-sqlrag
-SQL_LAMBDA_FN_PROD ?= Cephy-sql-alpha-prod-sqlrag
-
-SPARQL_TEMPLATE := agents/cckp-copilot/cloudformation.sparql.yaml
-SPARQL_LAMBDA_DIR := agents/cckp-copilot/lambda/cckpGraphRag
-
-# Mirrors the SQL variant's Cephy-alpha naming convention. No SPARQL stack
-# is deployed anywhere yet, so these are the intended names, not confirmed
-# live ones — adjust once a real stack exists.
-SPARQL_STACK_NAME_DEV ?= Cephy-sparql-alpha-dev
-SPARQL_STACK_NAME_PROD ?= Cephy-sparql-alpha-prod
-SPARQL_AGENT_NAME_DEV ?= Cephy-sparql-alpha-dev
-SPARQL_AGENT_NAME_PROD ?= Cephy-sparql-alpha-prod
-SPARQL_LAMBDA_FN_DEV ?= Cephy-sparql-alpha-dev-graphrag
-SPARQL_LAMBDA_FN_PROD ?= Cephy-sparql-alpha-prod-graphrag
+# Mirror the names in .github/workflows/deploy-copilot-sql.yml. No B2AI stack
+# is deployed yet, so these are the intended names, not confirmed live ones.
+SQL_STACK_NAME_DEV ?= b2ai-copilot-sql-dev
+SQL_STACK_NAME_PROD ?= b2ai-copilot-sql-prod
+SQL_AGENT_NAME_DEV ?= b2ai-copilot-sql-dev
+SQL_AGENT_NAME_PROD ?= b2ai-copilot-sql
+SQL_LAMBDA_FN_DEV ?= b2ai-copilot-sql-dev-sqlrag
+SQL_LAMBDA_FN_PROD ?= b2ai-copilot-sql-sqlrag
 
 CONFIRM_PROD = @echo "About to deploy to PRODUCTION ($(1)). Type 'yes' to continue:" && read -r ans && [ "$$ans" = "yes" ] || (echo "Aborted."; exit 1)
 
 .PHONY: help check-aws \
         deploy-sql-dev deploy-sql-dev-lambda deploy-sql-dev-stack \
+        deploy-sql-dev-upload deploy-sql-dev-code \
         deploy-sql-prod deploy-sql-prod-lambda deploy-sql-prod-stack \
-        deploy-sparql-dev deploy-sparql-dev-lambda deploy-sparql-dev-stack \
-        deploy-sparql-prod deploy-sparql-prod-lambda deploy-sparql-prod-stack
+        deploy-sql-prod-upload deploy-sql-prod-code deploy-sql-prod-stack-unconfirmed
 
 help:
-	@echo "Local deploy targets for agents/cckp-copilot (mirrors .github/workflows/deploy-copilot-*.yml):"
+	@echo "Local deploy targets for agents/b2ai-copilot (mirrors .github/workflows/deploy-copilot-sql.yml):"
 	@echo ""
 	@echo "  make check-aws                    confirm local AWS credentials/identity"
 	@echo ""
-	@echo "  make deploy-sql-dev               update dev Lambda code + deploy the dev SQL stack"
-	@echo "  make deploy-sql-dev-lambda        update dev Lambda code only"
-	@echo "  make deploy-sql-dev-stack         deploy the dev CloudFormation stack only"
+	@echo "  make deploy-sql-dev               upload package, deploy the dev stack, push the code"
+	@echo "                                    (use this for a first deploy -- it creates the Lambda)"
+	@echo "  make deploy-sql-dev-lambda        upload + push dev Lambda code only (stack must exist)"
+	@echo "  make deploy-sql-dev-stack         deploy the dev CloudFormation stack only (and repoint"
+	@echo "                                    the agent alias if the agent changed)"
+	@echo "                                    (expects the package already uploaded)"
 	@echo "  make deploy-sql-prod              same, against PRODUCTION (asks for confirmation)"
 	@echo "  make deploy-sql-prod-lambda"
 	@echo "  make deploy-sql-prod-stack"
 	@echo ""
-	@echo "  make deploy-sparql-dev / -lambda / -stack   same, for the SPARQL variant"
-	@echo "  make deploy-sparql-prod / -lambda / -stack  (not deployable yet — no hosted endpoint)"
-	@echo ""
-	@echo "Set CCKP_SPARQL_ENDPOINT before a *-sparql-*-stack deploy (sql stacks need no token)."
 	@echo "Optional: AWS_PROFILE, AWS_REGION, FOUNDATION_MODEL_ID, S3_BUCKET,"
-	@echo "          SQL_STACK_NAME_DEV/PROD, SQL_AGENT_NAME_DEV/PROD, SQL_LAMBDA_FN_DEV/PROD,"
-	@echo "          SPARQL_STACK_NAME_DEV/PROD, SPARQL_AGENT_NAME_DEV/PROD, SPARQL_LAMBDA_FN_DEV/PROD."
+	@echo "          SQL_STACK_NAME_DEV/PROD, SQL_AGENT_NAME_DEV/PROD, SQL_LAMBDA_FN_DEV/PROD."
 
 check-aws:
 	$(AWS) sts get-caller-identity
 
 # ---------------------------------------------------------------------------
-# SQL variant
+# SQL backend
 # ---------------------------------------------------------------------------
 
-deploy-sql-dev: deploy-sql-dev-lambda deploy-sql-dev-stack
+# A full deploy uploads the package, then deploys the stack (which creates the
+# Lambda from that package on a first deploy), then pushes the code into the
+# function (so a code-only change still lands when the stack is unchanged).
+# Every stack deploy ends with scripts/promote_agent_alias.sh: a stack update
+# refreshes the agent's DRAFT but leaves the alias on its old version, so the
+# script snapshots the DRAFT as a new version and repoints the alias (only if
+# the DRAFT changed).
+# The -lambda targets only work once the stack -- and so the function -- exists.
 
-deploy-sql-dev-lambda:
-	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/cckpSqlRag.zip lambda_function.py
-	$(AWS) s3 cp /tmp/cckpSqlRag.zip "s3://$(S3_BUCKET)/lambda/cckpSqlRag-dev.zip"
+PROMOTE_ALIAS = AWS_REGION=$(AWS_REGION) $(if $(AWS_PROFILE),AWS_PROFILE=$(AWS_PROFILE),) scripts/promote_agent_alias.sh
+
+deploy-sql-dev: deploy-sql-dev-upload deploy-sql-dev-stack deploy-sql-dev-code
+
+deploy-sql-dev-lambda: deploy-sql-dev-upload deploy-sql-dev-code
+
+deploy-sql-dev-upload:
+	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/b2aiSqlRag.zip lambda_function.py d4d_data.json
+	$(AWS) s3 cp /tmp/b2aiSqlRag.zip "s3://$(S3_BUCKET)/lambda/b2aiSqlRag-dev.zip"
+
+deploy-sql-dev-code:
 	$(AWS) lambda update-function-code \
 		--function-name $(SQL_LAMBDA_FN_DEV) \
 		--s3-bucket $(S3_BUCKET) \
-		--s3-key lambda/cckpSqlRag-dev.zip
+		--s3-key lambda/b2aiSqlRag-dev.zip
 
 deploy-sql-dev-stack:
 	$(AWS) cloudformation deploy \
@@ -121,23 +114,34 @@ deploy-sql-dev-stack:
 			AgentName=$(SQL_AGENT_NAME_DEV) \
 			FoundationModelId=$(FOUNDATION_MODEL_ID) \
 			LambdaS3Bucket=$(S3_BUCKET) \
-			LambdaS3Key=lambda/cckpSqlRag-dev.zip \
+			LambdaS3Key=lambda/b2aiSqlRag-dev.zip \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-fail-on-empty-changeset
+	$(PROMOTE_ALIAS) $(SQL_STACK_NAME_DEV)
 
-deploy-sql-prod: deploy-sql-prod-lambda deploy-sql-prod-stack
+deploy-sql-prod:
+	$(call CONFIRM_PROD,SQL Lambda + stack)
+	$(MAKE) --no-print-directory deploy-sql-prod-upload deploy-sql-prod-stack-unconfirmed deploy-sql-prod-code
 
 deploy-sql-prod-lambda:
 	$(call CONFIRM_PROD,SQL Lambda)
-	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/cckpSqlRag.zip lambda_function.py
-	$(AWS) s3 cp /tmp/cckpSqlRag.zip "s3://$(S3_BUCKET)/lambda/cckpSqlRag.zip"
-	$(AWS) lambda update-function-code \
-		--function-name $(SQL_LAMBDA_FN_PROD) \
-		--s3-bucket $(S3_BUCKET) \
-		--s3-key lambda/cckpSqlRag.zip
+	$(MAKE) --no-print-directory deploy-sql-prod-upload deploy-sql-prod-code
 
 deploy-sql-prod-stack:
 	$(call CONFIRM_PROD,SQL stack)
+	$(MAKE) --no-print-directory deploy-sql-prod-stack-unconfirmed
+
+deploy-sql-prod-upload:
+	cd $(SQL_LAMBDA_DIR) && zip -q /tmp/b2aiSqlRag.zip lambda_function.py d4d_data.json
+	$(AWS) s3 cp /tmp/b2aiSqlRag.zip "s3://$(S3_BUCKET)/lambda/b2aiSqlRag.zip"
+
+deploy-sql-prod-code:
+	$(AWS) lambda update-function-code \
+		--function-name $(SQL_LAMBDA_FN_PROD) \
+		--s3-bucket $(S3_BUCKET) \
+		--s3-key lambda/b2aiSqlRag.zip
+
+deploy-sql-prod-stack-unconfirmed:
 	$(AWS) cloudformation deploy \
 		--template-file $(SQL_TEMPLATE) \
 		--stack-name $(SQL_STACK_NAME_PROD) \
@@ -146,63 +150,7 @@ deploy-sql-prod-stack:
 			AgentName=$(SQL_AGENT_NAME_PROD) \
 			FoundationModelId=$(FOUNDATION_MODEL_ID) \
 			LambdaS3Bucket=$(S3_BUCKET) \
-			LambdaS3Key=lambda/cckpSqlRag.zip \
+			LambdaS3Key=lambda/b2aiSqlRag.zip \
 		--capabilities CAPABILITY_NAMED_IAM \
 		--no-fail-on-empty-changeset
-
-# ---------------------------------------------------------------------------
-# SPARQL variant (not deployable yet — no hosted CCKP SPARQL endpoint exists;
-# targets provided for when one does, mirroring deploy-copilot-sparql.yml)
-# ---------------------------------------------------------------------------
-
-deploy-sparql-dev: deploy-sparql-dev-lambda deploy-sparql-dev-stack
-
-deploy-sparql-dev-lambda:
-	cd $(SPARQL_LAMBDA_DIR) && zip -q /tmp/cckpGraphRag.zip lambda_function.py
-	$(AWS) s3 cp /tmp/cckpGraphRag.zip "s3://$(S3_BUCKET)/lambda/cckpGraphRag-dev.zip"
-	$(AWS) lambda update-function-code \
-		--function-name $(SPARQL_LAMBDA_FN_DEV) \
-		--s3-bucket $(S3_BUCKET) \
-		--s3-key lambda/cckpGraphRag-dev.zip
-
-deploy-sparql-dev-stack:
-	@test -n "$(CCKP_SPARQL_ENDPOINT)" || (echo "CCKP_SPARQL_ENDPOINT is required" >&2; exit 1)
-	$(AWS) cloudformation deploy \
-		--template-file $(SPARQL_TEMPLATE) \
-		--stack-name $(SPARQL_STACK_NAME_DEV) \
-		--s3-bucket $(S3_BUCKET) \
-		--parameter-overrides \
-			AgentName=$(SPARQL_AGENT_NAME_DEV) \
-			FoundationModelId=$(FOUNDATION_MODEL_ID) \
-			SparqlEndpoint=$(CCKP_SPARQL_ENDPOINT) \
-			LambdaS3Bucket=$(S3_BUCKET) \
-			LambdaS3Key=lambda/cckpGraphRag-dev.zip \
-		--capabilities CAPABILITY_NAMED_IAM \
-		--no-fail-on-empty-changeset
-
-deploy-sparql-prod: deploy-sparql-prod-lambda deploy-sparql-prod-stack
-
-deploy-sparql-prod-lambda:
-	$(call CONFIRM_PROD,SPARQL Lambda)
-	cd $(SPARQL_LAMBDA_DIR) && zip -q /tmp/cckpGraphRag.zip lambda_function.py
-	$(AWS) s3 cp /tmp/cckpGraphRag.zip "s3://$(S3_BUCKET)/lambda/cckpGraphRag.zip"
-	$(AWS) lambda update-function-code \
-		--function-name $(SPARQL_LAMBDA_FN_PROD) \
-		--s3-bucket $(S3_BUCKET) \
-		--s3-key lambda/cckpGraphRag.zip
-
-deploy-sparql-prod-stack:
-	$(call CONFIRM_PROD,SPARQL stack)
-	@test -n "$(CCKP_SPARQL_ENDPOINT)" || (echo "CCKP_SPARQL_ENDPOINT is required" >&2; exit 1)
-	$(AWS) cloudformation deploy \
-		--template-file $(SPARQL_TEMPLATE) \
-		--stack-name $(SPARQL_STACK_NAME_PROD) \
-		--s3-bucket $(S3_BUCKET) \
-		--parameter-overrides \
-			AgentName=$(SPARQL_AGENT_NAME_PROD) \
-			FoundationModelId=$(FOUNDATION_MODEL_ID) \
-			SparqlEndpoint=$(CCKP_SPARQL_ENDPOINT) \
-			LambdaS3Bucket=$(S3_BUCKET) \
-			LambdaS3Key=lambda/cckpGraphRag.zip \
-		--capabilities CAPABILITY_NAMED_IAM \
-		--no-fail-on-empty-changeset
+	$(PROMOTE_ALIAS) $(SQL_STACK_NAME_PROD)

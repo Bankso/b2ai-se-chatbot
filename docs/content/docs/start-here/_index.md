@@ -13,7 +13,7 @@ bookIcon: flag
 
 This guide builds on [Adding Custom Agents to Synapse](https://sagebionetworks.jira.com/wiki/spaces/PLFM/pages/3711303683/Adding+Custom+Agents+to+Synapse), which covers the basics of creating a Bedrock Agent and registering it with the Synapse chat interface. Start there if you're new to the framework.
 
-This goes further with lessons from the CCKP Copilot (a fork of the NF Portal Copilot, adapted for the Cancer Complexity Knowledge Portal), an agent with multiple-knowledge base integration for RAG, actions, backend evaluation frameworks, and CI/CD. We add examples and tips that include: a more extensive CloudFormation template with more capabilities, the dev/prod stack workflow, how to evaluate and iterate, a practical breakdown of effort, and for each area a reference to an actual implementation.
+This goes further with lessons from the Bridge2AI Standards Explorer Copilot (a fork of the NF Portal Copilot by way of the Cancer Complexity Knowledge Portal's CCKP Copilot, adapted for the [Bridge2AI Standards Explorer](https://b2ai.standards.synapse.org/)), an agent with multiple-knowledge base integration for RAG, actions, backend evaluation frameworks, and CI/CD. We add examples and tips that include: a more extensive CloudFormation template with more capabilities, the dev/prod stack workflow, how to evaluate and iterate, a practical breakdown of effort, and for each area a reference to an actual implementation.
 
 ## Available custom agent frameworks
 
@@ -60,7 +60,7 @@ The Copilot:
 
 ## Where to go next
 
-- [Reference workflow](/docs/start-here/cckp-copilot-workflow/) — diagram of the agent architecture, feedback loop, and CI/CD flow
+- [Reference workflow](/docs/start-here/b2ai-copilot-workflow/) — diagram of the agent architecture, feedback loop, and CI/CD flow
 - [Templates](/docs/start-here/templates/) — the Lambda function and CloudFormation template you can adapt for your own portal
 - [Deployment](/docs/start-here/deployment/) — the dev/prod stack workflow, CI/CD, knowledge base setup, and Synapse registration
 - [Benchmarking and evaluation](/docs/benchmarking-and-evaluation/) — where most of the ongoing effort goes

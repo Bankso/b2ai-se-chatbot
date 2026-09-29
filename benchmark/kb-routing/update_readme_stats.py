@@ -12,7 +12,7 @@ from pathlib import Path
 DATASET = Path("kb_routing_dataset.json")
 README = Path("README.md")
 
-SESSION_TYPES = ["DOCS", "GRAPH", "MIXED", "BOTH", "NONE"]
+SESSION_TYPES = ["DOCS", "RAG", "MIXED", "BOTH", "NONE"]
 
 TABLE_RE = re.compile(
     r"(### Dataset composition\n\n)"   # heading preserved
